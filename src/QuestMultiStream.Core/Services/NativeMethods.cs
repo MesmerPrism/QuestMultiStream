@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using QuestMultiStream.Core.Models;
 
 namespace QuestMultiStream.Core.Services;
 
@@ -14,6 +15,10 @@ internal static class NativeMethods
     public const int SwHide = 0;
     public const int SwShowMinimized = 2;
     public const int SwRestore = 9;
+    public const int SmXVirtualScreen = 76;
+    public const int SmYVirtualScreen = 77;
+    public const int SmCxVirtualScreen = 78;
+    public const int SmCyVirtualScreen = 79;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct Rect
@@ -82,4 +87,16 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool ShowWindow(IntPtr windowHandle, int command);
+
+    [DllImport("user32.dll")]
+    public static extern int GetSystemMetrics(int index);
+
+    public static WindowLayoutBounds GetVirtualScreenBounds()
+    {
+        var x = GetSystemMetrics(SmXVirtualScreen);
+        var y = GetSystemMetrics(SmYVirtualScreen);
+        var width = Math.Max(1, GetSystemMetrics(SmCxVirtualScreen));
+        var height = Math.Max(1, GetSystemMetrics(SmCyVirtualScreen));
+        return new WindowLayoutBounds(x, y, width, height);
+    }
 }

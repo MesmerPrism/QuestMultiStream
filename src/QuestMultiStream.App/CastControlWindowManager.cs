@@ -1,11 +1,18 @@
 using QuestMultiStream.App.ViewModels;
 using QuestMultiStream.Core.Models;
 using QuestMultiStream.Core.Services;
+using System.Runtime.InteropServices;
 
 namespace QuestMultiStream.App;
 
 internal sealed class CastControlWindowManager
 {
+    private const int MinimumVisibleWidth = 720;
+    private const int MinimumVisibleHeight = 460;
+    private const int SmXVirtualScreen = 76;
+    private const int SmYVirtualScreen = 77;
+    private const int SmCxVirtualScreen = 78;
+    private const int SmCyVirtualScreen = 79;
     private readonly Func<string, Task> _stopSessionAsync;
     private readonly Func<string, WindowLayoutBounds, Task> _resizeSessionAsync;
     private readonly Dictionary<string, CastControlWindow> _windows = new(StringComparer.OrdinalIgnoreCase);
@@ -45,17 +52,25 @@ internal sealed class CastControlWindowManager
                 continue;
             }
 
-            window = new CastControlWindow(row, session);
-            window.CloseRequested += OnWindowCloseRequested;
-            window.ResizeRequested += OnWindowResizeRequested;
-            _windows[serial] = window;
-
-            if (_rememberedBounds.TryGetValue(serial, out var rememberedBounds))
+            try
             {
-                window.ApplyBounds(rememberedBounds);
-            }
+                window = new CastControlWindow(row, session);
+                window.CloseRequested += OnWindowCloseRequested;
+                window.ResizeRequested += OnWindowResizeRequested;
+                _windows[serial] = window;
 
-            window.Show();
+                if (_rememberedBounds.TryGetValue(serial, out var rememberedBounds))
+                {
+                    window.ApplyBounds(NormalizeBounds(rememberedBounds));
+                }
+
+                window.Show();
+            }
+            catch
+            {
+                session.TryRestoreWindow();
+                session.TrySetTopmost(row.IsCastWindowPinned);
+            }
         }
 
         foreach (var serial in _windows.Keys.Except(activeSerials, StringComparer.OrdinalIgnoreCase).ToArray())
@@ -120,8 +135,9 @@ internal sealed class CastControlWindowManager
 
         try
         {
-            _rememberedBounds[window.Serial] = bounds;
-            await _resizeSessionAsync(window.Serial, bounds).ConfigureAwait(false);
+            var normalizedBounds = NormalizeBounds(bounds);
+            _rememberedBounds[window.Serial] = normalizedBounds;
+            await _resizeSessionAsync(window.Serial, normalizedBounds).ConfigureAwait(false);
         }
         catch
         {
@@ -137,7 +153,7 @@ internal sealed class CastControlWindowManager
 
         if (window.TryGetWindowBounds(out var bounds))
         {
-            _rememberedBounds[serial] = bounds;
+            _rememberedBounds[serial] = NormalizeBounds(bounds);
         }
 
         window.CloseRequested -= OnWindowCloseRequested;
@@ -145,6 +161,30 @@ internal sealed class CastControlWindowManager
         window.CloseFromManager();
         _windows.Remove(serial);
     }
+
+    private static WindowLayoutBounds NormalizeBounds(WindowLayoutBounds bounds)
+    {
+        var virtualScreen = GetVirtualScreenBounds();
+        var width = Math.Clamp(bounds.Width, MinimumVisibleWidth, Math.Max(MinimumVisibleWidth, virtualScreen.Width));
+        var height = Math.Clamp(bounds.Height, MinimumVisibleHeight, Math.Max(MinimumVisibleHeight, virtualScreen.Height));
+        var maxX = (virtualScreen.X + virtualScreen.Width) - width;
+        var maxY = (virtualScreen.Y + virtualScreen.Height) - height;
+        var x = Math.Clamp(bounds.X, virtualScreen.X, maxX);
+        var y = Math.Clamp(bounds.Y, virtualScreen.Y, maxY);
+        return new WindowLayoutBounds(x, y, width, height);
+    }
+
+    private static WindowLayoutBounds GetVirtualScreenBounds()
+    {
+        var x = GetSystemMetrics(SmXVirtualScreen);
+        var y = GetSystemMetrics(SmYVirtualScreen);
+        var width = Math.Max(1, GetSystemMetrics(SmCxVirtualScreen));
+        var height = Math.Max(1, GetSystemMetrics(SmCyVirtualScreen));
+        return new WindowLayoutBounds(x, y, width, height);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int index);
 
     private static IReadOnlyList<WindowLayoutBounds> BuildLayoutSlots(
         WindowLayoutBounds area,
