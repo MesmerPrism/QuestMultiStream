@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "name": "quest-multi-stream-site",
+  "description": "Static docs build for Quest Multi Stream",
+  "scripts": {
+    "pages:build": "node ./tools/site/build-pages.mjs",
+    "pages:serve": "browser-sync start --server site --files \"site/**/*\" --startPath \"index.html\""
+  },
+  "devDependencies": {
+    "browser-sync": "^3.0.3",
+    "marked": "^15.0.7",
+    "yaml": "^2.8.1"
+  }
+}

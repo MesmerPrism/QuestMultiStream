@@ -469,6 +469,11 @@ function Invoke-Publish {
         throw "Published executable not found at $exePath"
     }
 
+    $bundleScriptPath = Join-Path $repoRoot 'tools\app\Sync-Bundled-Scrcpy.ps1'
+    if (Test-Path $bundleScriptPath) {
+        & $bundleScriptPath -DestinationRoot $outputPath | Out-Null
+    }
+
     $directories = Get-PublishedBuildDirectories
     if ($KeepCount -gt 0 -and $directories.Count -gt $KeepCount) {
         $directories | Select-Object -Skip $KeepCount | ForEach-Object {
@@ -639,6 +644,51 @@ function Invoke-InspectCast {
 function Invoke-RefreshShortcuts {
     $scriptPath = Join-Path $repoRoot 'tools\app\Refresh-Desktop-Launcher.ps1'
     & $scriptPath -RefreshPublishedBuild:$RefreshPublishedBuild
+}
+
+function Invoke-PagesBuild {
+    $npmPath = Find-OnPath @('npm.cmd', 'npm.exe', 'npm')
+    if ([string]::IsNullOrWhiteSpace($npmPath)) {
+        throw 'npm was not found on PATH. Install Node.js to build the GitHub Pages site.'
+    }
+
+    & $npmPath install | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "npm install failed with exit code $LASTEXITCODE"
+    }
+
+    & $npmPath run pages:build | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "npm run pages:build failed with exit code $LASTEXITCODE"
+    }
+
+    [pscustomobject]@{
+        SiteDirectory = Join-Path $repoRoot 'site'
+    }
+}
+
+function Invoke-BuildPackage {
+    $scriptPath = Join-Path $repoRoot 'tools\app\Build-App-Package.ps1'
+    if (-not (Test-Path $scriptPath)) {
+        throw "Packaging script not found at $scriptPath"
+    }
+
+    & $scriptPath -Unsigned | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "Build-App-Package.ps1 failed with exit code $LASTEXITCODE"
+    }
+}
+
+function Invoke-PublishPreviewSetup {
+    $scriptPath = Join-Path $repoRoot 'tools\app\Publish-PreviewSetup.ps1'
+    if (-not (Test-Path $scriptPath)) {
+        throw "Preview setup publish script not found at $scriptPath"
+    }
+
+    & $scriptPath | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "Publish-PreviewSetup.ps1 failed with exit code $LASTEXITCODE"
+    }
 }
 
 function Invoke-VisualTest {
@@ -847,6 +897,9 @@ Commands:
   run               Launch the app. Default mode is Auto.
   build             Build the WPF app and print the built EXE path.
   publish           Publish a versioned single-file build and print the EXE path.
+  pages-build       Install site dependencies and build the GitHub Pages output.
+  build-package     Experimental: build an unsigned local MSIX package if the Desktop Bridge toolchain supports .NET 10.
+  publish-preview-setup Build the local guided preview setup bootstrapper.
   verify-launch     Launch the app and report whether a process is still alive.
   doctor            Show toolchain, device, log, and running-app diagnostics.
   devices           Dump Quest device visibility through adb and hzdb.
@@ -891,6 +944,15 @@ try {
                 RuntimeIdentifier = $RuntimeIdentifier
                 ExecutablePath = $exePath
             }
+        }
+        'pages-build' {
+            Invoke-PagesBuild | Format-List *
+        }
+        'build-package' {
+            Invoke-BuildPackage
+        }
+        'publish-preview-setup' {
+            Invoke-PublishPreviewSetup
         }
         'verify-launch' {
             Invoke-VerifyLaunch | Format-List *

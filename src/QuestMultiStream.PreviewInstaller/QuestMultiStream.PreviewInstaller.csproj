@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>QuestMultiStream.PreviewInstaller</RootNamespace>
+    <AssemblyName>QuestMultiStream.PreviewInstaller</AssemblyName>
+    <Description>Guided bootstrapper for installing the Quest Multi Stream Windows preview.</Description>
+    <ApplicationIcon>..\QuestMultiStream.App\Assets\quest-multi-stream.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\QuestMultiStream.App\Assets\quest-multi-stream.png" Link="Assets\quest-multi-stream.png" />
+  </ItemGroup>
+</Project>

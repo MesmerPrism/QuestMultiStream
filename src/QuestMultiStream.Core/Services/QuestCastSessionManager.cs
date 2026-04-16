@@ -147,7 +147,8 @@ public sealed class QuestCastSessionManager : IDisposable
             FileName = dependencies.ScrcpyPath,
             WorkingDirectory = Path.GetDirectoryName(dependencies.ScrcpyPath) ?? _paths.AppBaseDirectory,
             UseShellExecute = true,
-            CreateNoWindow = false
+            CreateNoWindow = false,
+            WindowStyle = ProcessWindowStyle.Hidden
         };
 
         foreach (var argument in ScrcpyArgumentBuilder.Build(device, windowTitle, launchProfile))

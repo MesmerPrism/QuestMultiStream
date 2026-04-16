@@ -24,3 +24,11 @@ codebase small and preserves upstream compatibility when `scrcpy` updates.
 Each active session gets a predictable window title. The app polls the
 session's main window handle, then repositions windows into a grid inside the
 primary working area.
+---
+title: Architecture
+description: Internal structure of the Quest Multi Stream app.
+summary: Session management, scrcpy launch/restart flow, wrapper windows, and local tooling discovery.
+nav_label: Architecture
+nav_group: Engineering
+nav_order: 10
+---

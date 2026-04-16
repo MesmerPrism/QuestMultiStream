@@ -69,6 +69,8 @@ Useful commands:
 - `run`
 - `build`
 - `publish`
+- `pages-build`
+- `publish-preview-setup`
 - `verify-launch`
 - `doctor`
 - `devices`
@@ -80,6 +82,12 @@ Useful commands:
 
 `run` is single-instance aware: if Quest Multi Stream is already open, the CLI
 focuses the existing window instead of launching another copy.
+
+Release/build extras:
+
+- `pages-build` builds the static GitHub Pages site into `site\`
+- `publish-preview-setup` builds the guided Windows installer bootstrapper into `artifacts\windows-installer\`
+- `build-package` is still present for experimental MSIX work, but the current public release path is the portable installer + zip workflow because local Desktop Bridge tooling is not yet aligned with `.NET 10`
 
 Recommended live workflow:
 
@@ -100,6 +108,21 @@ manual screenshot tooling.
 app, presses the first `Start Cast` button it finds, waits for the cast to come
 up, then captures screenshot evidence and fails if no visible `scrcpy` window
 exists.
+
+## Public release path
+
+The repo now includes:
+
+- a static GitHub Pages site under `docs/` built via `npm run pages:build`
+- a Windows preview bootstrapper project under `src/QuestMultiStream.PreviewInstaller`
+- GitHub Actions workflows for Pages deployment and tagged Windows releases
+
+The currently verified public installer path is:
+
+1. publish the portable Windows build with bundled scrcpy
+2. zip it as `QuestMultiStream-win-x64.zip`
+3. publish `QuestMultiStream-Preview-Setup.exe`
+4. let the bootstrapper download the zip, install it under `%LOCALAPPDATA%\Programs\QuestMultiStream`, refresh shortcuts, and launch the app
 
 ## Windows note
 

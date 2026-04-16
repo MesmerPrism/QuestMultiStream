@@ -1,0 +1,164 @@
+name: Release Quest Multi Stream Preview
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semantic version without the leading v (example: 0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Resolve release version
+        id: version
+        shell: pwsh
+        run: |
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            $tagName = 'v${{ inputs.version }}'
+            $semVer = '${{ inputs.version }}'
+          }
+          else {
+            $tagName = '${{ github.ref_name }}'
+            if ($tagName -match '^v(?<SemVer>\d+\.\d+\.\d+)$') {
+              $semVer = $Matches.SemVer
+            }
+            else {
+              throw "Expected a tag like v0.1.0, got $tagName"
+            }
+          }
+
+          if ($semVer -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Version must look like 0.1.0, got $semVer"
+          }
+
+          "tag_name=$tagName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "semver=$semVer" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "package_version=$semVer.0" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Restore
+        run: dotnet restore QuestMultiStream.sln
+
+      - name: Build
+        run: dotnet build QuestMultiStream.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test QuestMultiStream.sln --configuration Release --no-build
+
+      - name: Publish portable app
+        shell: pwsh
+        run: |
+          dotnet publish src/QuestMultiStream.App/QuestMultiStream.App.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            -p:PublishSingleFile=true `
+            -p:SelfContained=true `
+            --output artifacts/app-win-x64
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "dotnet publish failed for QuestMultiStream.App"
+          }
+
+          & powershell -ExecutionPolicy Bypass -File .\tools\app\Sync-Bundled-Scrcpy.ps1 `
+            -DestinationRoot artifacts\app-win-x64 `
+            -FailIfMissing
+
+      - name: Publish preview setup bootstrapper
+        shell: pwsh
+        env:
+          WINDOWS_PACKAGE_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_PACKAGE_CERTIFICATE_BASE64 }}
+          WINDOWS_PACKAGE_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_PACKAGE_CERTIFICATE_PASSWORD }}
+          WINDOWS_PACKAGE_TIMESTAMP_URL: ${{ vars.WINDOWS_PACKAGE_TIMESTAMP_URL }}
+        run: |
+          $certificatePath = $null
+          if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_PACKAGE_CERTIFICATE_BASE64)) {
+            $certificatePath = Join-Path $env:RUNNER_TEMP 'QuestMultiStream-preview-setup-signing.pfx'
+            $certificateBytes = [Convert]::FromBase64String($env:WINDOWS_PACKAGE_CERTIFICATE_BASE64)
+            [IO.File]::WriteAllBytes($certificatePath, $certificateBytes)
+          }
+
+          $args = @(
+            '-Version', '${{ steps.version.outputs.package_version }}',
+            '-FileName', 'QuestMultiStream-Preview-Setup.exe'
+          )
+
+          if (-not [string]::IsNullOrWhiteSpace($certificatePath)) {
+            $args += @('-PackageCertificatePath', $certificatePath)
+            if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_PACKAGE_CERTIFICATE_PASSWORD)) {
+              $args += @('-PackageCertificatePassword', $env:WINDOWS_PACKAGE_CERTIFICATE_PASSWORD)
+            }
+            if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_PACKAGE_TIMESTAMP_URL)) {
+              $args += @('-PackageCertificateTimestampUrl', $env:WINDOWS_PACKAGE_TIMESTAMP_URL)
+            }
+          }
+
+          & powershell -ExecutionPolicy Bypass -File .\tools\app\Publish-PreviewSetup.ps1 @args
+
+      - name: Package portable release assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts\windows-installer | Out-Null
+          Compress-Archive -Path artifacts\app-win-x64\* -DestinationPath artifacts\windows-installer\QuestMultiStream-win-x64.zip
+
+      - name: Write SHA256 sums
+        shell: pwsh
+        run: |
+          $files = @(
+            (Join-Path $PWD 'artifacts\windows-installer\QuestMultiStream-Preview-Setup.exe'),
+            (Join-Path $PWD 'artifacts\windows-installer\QuestMultiStream-win-x64.zip')
+          )
+
+          Get-FileHash -Path $files -Algorithm SHA256 |
+            ForEach-Object { '{0} *{1}' -f $_.Hash.ToLowerInvariant(), [IO.Path]::GetFileName($_.Path) } |
+            Set-Content -Path (Join-Path $PWD 'artifacts\windows-installer\SHA256SUMS.txt') -Encoding utf8
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuestMultiStream-windows-release
+          path: artifacts/windows-installer
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tagName = '${{ steps.version.outputs.tag_name }}'
+          $releaseTitle = "Quest Multi Stream Preview ${{ steps.version.outputs.package_version }}"
+          $assets = @(
+            'artifacts\windows-installer\QuestMultiStream-Preview-Setup.exe',
+            'artifacts\windows-installer\QuestMultiStream-win-x64.zip',
+            'artifacts\windows-installer\SHA256SUMS.txt'
+          )
+
+          gh release view $tagName *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tagName $assets --clobber
+          }
+          else {
+            gh release create $tagName $assets --title $releaseTitle --generate-notes --latest --target $env:GITHUB_SHA
+          }
+
+      - name: Remove signing certificate
+        if: always()
+        shell: pwsh
+        run: |
+          $certificatePath = Join-Path $env:RUNNER_TEMP 'QuestMultiStream-preview-setup-signing.pfx'
+          if (Test-Path $certificatePath) {
+            Remove-Item -Force $certificatePath
+          }

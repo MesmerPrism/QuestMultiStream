@@ -82,3 +82,11 @@ The likely order is:
 1. make `Display 0` casting reliable inside the host shell
 2. capture the stereo feed into an app-owned render path
 3. implement a reprojection-based composite view instead of a 2D crop
+---
+title: Live Verification
+description: CLI workflow for launch, cast, and screenshot validation.
+summary: Build, run, smoke-cast, and visual regression checks from the repo CLI.
+nav_label: Live Verification
+nav_group: Engineering
+nav_order: 11
+---

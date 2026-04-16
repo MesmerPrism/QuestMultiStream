@@ -42,3 +42,11 @@ These are the upstream materials used to shape the first implementation.
 
 - `C:\Users\tillh\source\repos\ViscerealityCompanion`
   - used as the structural and visual template for a solid Windows operator app
+---
+title: References
+description: Upstream links and implementation references.
+summary: Scrcpy, Quest casting behavior, and local implementation references used by the app.
+nav_label: References
+nav_group: Engineering
+nav_order: 12
+---
