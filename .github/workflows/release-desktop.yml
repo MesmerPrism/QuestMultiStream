@@ -60,6 +60,11 @@ jobs:
       - name: Test
         run: dotnet test QuestMultiStream.sln --configuration Release --no-build
 
+      - name: Install bundled scrcpy runtime
+        shell: pwsh
+        run: |
+          & powershell -ExecutionPolicy Bypass -File .\tools\setup\Install-Scrcpy.ps1
+
       - name: Publish portable app
         shell: pwsh
         run: |
