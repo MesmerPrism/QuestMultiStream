@@ -139,15 +139,15 @@ public sealed class QuestCastSessionManager : IDisposable
             throw new InvalidOperationException(dependencies.Guidance);
         }
 
+        await TryWakeBeforeStartAsync(device, cancellationToken).ConfigureAwait(false);
+
         var windowTitle = BuildWindowTitle(device);
         var startInfo = new ProcessStartInfo
         {
             FileName = dependencies.ScrcpyPath,
             WorkingDirectory = Path.GetDirectoryName(dependencies.ScrcpyPath) ?? _paths.AppBaseDirectory,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
+            UseShellExecute = true,
+            CreateNoWindow = false
         };
 
         foreach (var argument in ScrcpyArgumentBuilder.Build(device, windowTitle, launchProfile))
@@ -169,36 +169,11 @@ public sealed class QuestCastSessionManager : IDisposable
 
         var session = new QuestCastSession(device, windowTitle, launchProfile, process);
 
-        process.OutputDataReceived += (_, args) =>
-        {
-            if (string.IsNullOrWhiteSpace(args.Data))
-            {
-                return;
-            }
-
-            session.RecordOutput(args.Data);
-            Log("debug", $"{device.DisplayName}: {args.Data}");
-        };
-
-        process.ErrorDataReceived += (_, args) =>
-        {
-            if (string.IsNullOrWhiteSpace(args.Data))
-            {
-                return;
-            }
-
-            session.RecordOutput(args.Data);
-            Log("warning", $"{device.DisplayName}: {args.Data}");
-        };
-
         process.Exited += (_, _) =>
         {
             session.MarkExited();
             Log("info", $"{device.DisplayName} cast ended.", session.LastMessage);
         };
-
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
 
         lock (_sync)
         {
@@ -360,6 +335,23 @@ public sealed class QuestCastSessionManager : IDisposable
         }
 
         return new QuestAdbService(dependencies.AdbPath);
+    }
+
+    private async Task TryWakeBeforeStartAsync(QuestDevice device, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await WakeAsync(device.Serial, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(300, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log("warning", $"Wake command failed for {device.DisplayName}; continuing cast launch.", ex.Message);
+        }
     }
 
     private QuestCastSession? TryGetSession(string serial)

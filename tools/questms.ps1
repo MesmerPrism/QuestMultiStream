@@ -39,7 +39,18 @@ function Write-LauncherLog {
     )
 
     $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'
-    "$timestamp [$Level] $Message" | Out-File -FilePath $launcherLogPath -Append -Encoding utf8
+    $line = "$timestamp [$Level] $Message$([Environment]::NewLine)"
+    for ($attempt = 0; $attempt -lt 5; $attempt++) {
+        try {
+            [System.IO.File]::AppendAllText($launcherLogPath, $line, [System.Text.Encoding]::UTF8)
+            return
+        }
+        catch [System.IO.IOException] {
+            Start-Sleep -Milliseconds 150
+        }
+    }
+
+    throw "Could not append to launcher log '$launcherLogPath' after repeated retries."
 }
 
 function Ensure-Win32Interop {
@@ -70,6 +81,15 @@ public static class QuestMultiStreamLauncherNative
     public static extern bool IsIconic(IntPtr windowHandle);
 }
 '@
+}
+
+function Ensure-UiAutomationInterop {
+    if ('System.Windows.Automation.AutomationElement' -as [type]) {
+        return
+    }
+
+    Add-Type -AssemblyName UIAutomationClient
+    Add-Type -AssemblyName UIAutomationTypes
 }
 
 function Get-RunningAppProcess {
@@ -125,6 +145,64 @@ function Focus-AppProcess {
 
     [QuestMultiStreamLauncherNative]::BringWindowToTop($windowHandle) | Out-Null
     return [QuestMultiStreamLauncherNative]::SetForegroundWindow($windowHandle)
+}
+
+function Get-AppAutomationWindow {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Diagnostics.Process]$Process
+    )
+
+    Ensure-UiAutomationInterop
+
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
+        try {
+            $Process.Refresh()
+        }
+        catch {
+        }
+
+        if ($Process.MainWindowHandle -ne 0) {
+            return [System.Windows.Automation.AutomationElement]::FromHandle($Process.MainWindowHandle)
+        }
+
+        Start-Sleep -Milliseconds 250
+    }
+
+    return $null
+}
+
+function Find-WindowButtons {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Automation.AutomationElement]$Window,
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $controlTypeCondition = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        [System.Windows.Automation.ControlType]::Button)
+    $nameCondition = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::NameProperty,
+        $Name)
+    $buttonCondition = New-Object System.Windows.Automation.AndCondition -ArgumentList @($controlTypeCondition, $nameCondition)
+
+    return $Window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $buttonCondition)
+}
+
+function Invoke-WindowButton {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Automation.AutomationElement]$Button
+    )
+
+    $invokePattern = $Button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+    if ($null -eq $invokePattern) {
+        throw "Button '$($Button.Current.Name)' does not expose InvokePattern."
+    }
+
+    $invokePattern.Invoke()
 }
 
 function Get-NewestInputWriteTimeUtc {
@@ -579,6 +657,61 @@ function Invoke-VisualTest {
     }
 }
 
+function Invoke-SmokeCast {
+    $process = Invoke-Run
+    Start-Sleep -Seconds 3
+
+    $appProcess = if ($process -and $process.Id) {
+        Get-Process -Id $process.Id -ErrorAction SilentlyContinue
+    }
+    else {
+        Get-RunningAppProcess
+    }
+
+    if (-not $appProcess) {
+        throw 'Quest Multi Stream is not running, so the cast smoke test cannot continue.'
+    }
+
+    Focus-AppProcess -Process $appProcess | Out-Null
+    $window = Get-AppAutomationWindow -Process $appProcess
+    if ($null -eq $window) {
+        throw 'Could not bind UI automation to the Quest Multi Stream window.'
+    }
+
+    $startButtons = Find-WindowButtons -Window $window -Name 'Start Cast'
+    $startButton = $null
+    foreach ($candidate in $startButtons) {
+        if (-not $candidate.Current.IsEnabled) {
+            continue
+        }
+
+        if ($candidate.Current.IsOffscreen) {
+            continue
+        }
+
+        $startButton = $candidate
+        break
+    }
+
+    if ($null -eq $startButton) {
+        throw "Could not find a 'Start Cast' button in the app window."
+    }
+
+    Invoke-WindowButton -Button $startButton
+    Start-Sleep -Seconds 8
+
+    $capture = Invoke-VisualTest
+    $scrcpyWindows = @($capture.Windows | Where-Object { $_.Role -eq 'scrcpy-window' })
+
+    [pscustomobject]@{
+        Started = $scrcpyWindows.Count -gt 0
+        ScrcpyWindowCount = $scrcpyWindows.Count
+        OutputDirectory = $capture.OutputDirectory
+        ManifestPath = $capture.ManifestPath
+        Windows = $capture.Windows
+    }
+}
+
 function Invoke-VerifyLaunch {
     $process = Invoke-Run
     Start-Sleep -Seconds 5
@@ -720,6 +853,7 @@ Commands:
   logs              Print the latest launcher/app logs and tail them.
   inspect-cast      Inspect the hosted cast window; pass -FixEmbeddedSize to repair a live mismatch.
   visual-test       Capture screenshot evidence for the app and visible cast windows.
+  smoke-cast        Launch or reuse the app, press Start Cast, then capture screenshot evidence.
   refresh-shortcuts Recreate the desktop and Start Menu shortcuts.
   help              Show this message.
 
@@ -775,6 +909,14 @@ try {
         }
         'visual-test' {
             Invoke-VisualTest | Format-List *
+        }
+        'smoke-cast' {
+            $result = Invoke-SmokeCast
+            if (-not $result.Started) {
+                throw "Cast smoke test did not produce a visible scrcpy window. Inspect $($result.ManifestPath)."
+            }
+
+            $result | Format-List *
         }
         'refresh-shortcuts' {
             Invoke-RefreshShortcuts

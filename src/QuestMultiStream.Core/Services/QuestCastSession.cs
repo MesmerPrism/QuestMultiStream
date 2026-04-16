@@ -101,7 +101,16 @@ public sealed class QuestCastSession : IDisposable
             return WindowHandle != IntPtr.Zero && NativeMethods.IsWindow(WindowHandle);
         }
 
-        if (WindowHandle != IntPtr.Zero && NativeMethods.IsWindow(WindowHandle))
+        var titledWindow = NativeMethods.FindWindow(null, WindowTitle);
+        if (titledWindow != IntPtr.Zero && NativeMethods.IsWindowVisible(titledWindow))
+        {
+            WindowHandle = titledWindow;
+            return true;
+        }
+
+        if (WindowHandle != IntPtr.Zero &&
+            NativeMethods.IsWindow(WindowHandle) &&
+            NativeMethods.IsWindowVisible(WindowHandle))
         {
             return true;
         }
@@ -109,7 +118,8 @@ public sealed class QuestCastSession : IDisposable
         try
         {
             _process.Refresh();
-            if (_process.MainWindowHandle != IntPtr.Zero)
+            if (_process.MainWindowHandle != IntPtr.Zero &&
+                NativeMethods.IsWindowVisible(_process.MainWindowHandle))
             {
                 WindowHandle = _process.MainWindowHandle;
                 return true;
@@ -118,13 +128,6 @@ public sealed class QuestCastSession : IDisposable
         catch (InvalidOperationException)
         {
             return WindowHandle != IntPtr.Zero;
-        }
-
-        var foundWindow = NativeMethods.FindWindow(null, WindowTitle);
-        if (foundWindow != IntPtr.Zero)
-        {
-            WindowHandle = foundWindow;
-            return true;
         }
 
         return false;

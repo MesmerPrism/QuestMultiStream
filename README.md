@@ -75,6 +75,7 @@ Useful commands:
 - `logs`
 - `inspect-cast`
 - `visual-test`
+- `smoke-cast`
 - `refresh-shortcuts`
 
 `run` is single-instance aware: if Quest Multi Stream is already open, the CLI
@@ -85,6 +86,7 @@ Recommended live workflow:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\questms.ps1 doctor
 powershell -ExecutionPolicy Bypass -File .\tools\questms.ps1 verify-launch
+powershell -ExecutionPolicy Bypass -File .\tools\questms.ps1 smoke-cast
 powershell -ExecutionPolicy Bypass -File .\tools\questms.ps1 inspect-cast -FixEmbeddedSize
 powershell -ExecutionPolicy Bypass -File .\tools\questms.ps1 visual-test
 ```
@@ -93,6 +95,11 @@ powershell -ExecutionPolicy Bypass -File .\tools\questms.ps1 visual-test
 `scrcpy` cast windows into `artifacts\visual-tests\<timestamp>\` together with a
 `manifest.json`, so UI and cast regressions can be checked from the CLI without
 manual screenshot tooling.
+
+`smoke-cast` drives the app through UI automation: it launches or reuses the
+app, presses the first `Start Cast` button it finds, waits for the cast to come
+up, then captures screenshot evidence and fails if no visible `scrcpy` window
+exists.
 
 ## Windows note
 

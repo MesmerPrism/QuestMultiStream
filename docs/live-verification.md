@@ -5,7 +5,12 @@ layer changes need live confirmation against a connected Quest.
 
 ## Host Window Checks
 
-1. Start a real cast from the app.
+1. Start a real cast from the app, or let the CLI do it:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\tools\questms.ps1 smoke-cast
+   ```
+
 2. Keep the cast window visible as the visual source of truth.
 3. Run:
 
