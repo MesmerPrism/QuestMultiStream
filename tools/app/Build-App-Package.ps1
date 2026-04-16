@@ -9,10 +9,10 @@ param(
     [ValidateSet('x64')]
     [string]$Platform = 'x64',
     [string]$Version = '0.1.0.0',
-    [string]$PackageId = 'Zivilkannibale.QuestMultiStream',
-    [string]$Publisher = 'CN=Zivilkannibale',
+    [string]$PackageId = 'MesmerPrism.QuestMultiStream',
+    [string]$Publisher = 'CN=MesmerPrism',
     [string]$DisplayName = 'Quest Multi Stream',
-    [string]$PublisherDisplayName = 'Zivilkannibale',
+    [string]$PublisherDisplayName = 'Mesmer Prism',
     [string]$OutputRelativePath = 'artifacts\windows-installer',
     [string]$PackageFileName = 'QuestMultiStream.msix',
     [string]$AppInstallerFileName = 'QuestMultiStream.appinstaller',

@@ -11,8 +11,8 @@ internal readonly record struct InstallerCompletionResult(
 
 internal static class Program
 {
-    private const string ReleaseZipUri = "https://github.com/Zivilkannibale/QuestMultiStream/releases/latest/download/QuestMultiStream-win-x64.zip";
-    private const string ReleasePageUri = "https://github.com/Zivilkannibale/QuestMultiStream/releases";
+    private const string ReleaseZipUri = "https://github.com/MesmerPrism/QuestMultiStream/releases/latest/download/QuestMultiStream-win-x64.zip";
+    private const string ReleasePageUri = "https://github.com/MesmerPrism/QuestMultiStream/releases";
     private const string DownloadDirectoryName = "QuestMultiStreamPreviewSetup";
     private const string ReleaseZipFileName = "QuestMultiStream-win-x64.zip";
     private const string InstallDirectoryName = "QuestMultiStream";

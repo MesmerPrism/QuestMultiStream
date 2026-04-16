@@ -6,13 +6,13 @@
   IgnorableNamespaces="uap rescap">
 
   <Identity
-    Name="Zivilkannibale.QuestMultiStream"
-    Publisher="CN=Zivilkannibale"
+    Name="MesmerPrism.QuestMultiStream"
+    Publisher="CN=MesmerPrism"
     Version="0.1.0.0" />
 
   <Properties>
     <DisplayName>Quest Multi Stream</DisplayName>
-    <PublisherDisplayName>Zivilkannibale</PublisherDisplayName>
+    <PublisherDisplayName>Mesmer Prism</PublisherDisplayName>
     <Logo>Images\StoreLogo.png</Logo>
   </Properties>
 
