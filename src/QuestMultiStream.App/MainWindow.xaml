@@ -1,0 +1,426 @@
+<Window x:Class="QuestMultiStream.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="clr-namespace:QuestMultiStream.App.ViewModels"
+        mc:Ignorable="d"
+        Title="Quest Multi Stream"
+        Icon="Assets/quest-multi-stream.ico"
+        Width="1520"
+        Height="980"
+        MinWidth="1240"
+        MinHeight="820"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource AppBackgroundBrush}"
+        Foreground="{StaticResource InkBrush}">
+    <Grid Margin="18"
+          Background="{StaticResource AppBackgroundBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="16" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="16" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border Height="6"
+                Background="{StaticResource AccentBrush}"
+                CornerRadius="3" />
+
+        <Border Grid.Row="2" Style="{StaticResource PanelBorderStyle}" Padding="16,14,16,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel>
+                    <TextBlock Text="Quest Multi Stream" Style="{StaticResource HeroTitleStyle}" />
+                    <TextBlock Text="Operator shell for simultaneous Quest casts."
+                               Style="{StaticResource SectionCaptionStyle}"
+                               Margin="0,4,0,0" />
+                    <TextBlock Text="{Binding StatusBanner}"
+                               Style="{StaticResource MicroCaptionStyle}" />
+                </StackPanel>
+
+                <WrapPanel Grid.Column="1"
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Center">
+                    <Button Content="Refresh Devices"
+                            Command="{Binding RefreshDevicesCommand}"
+                            Style="{StaticResource PrimaryActionButtonStyle}" />
+                    <Button Content="Arrange Windows"
+                            Command="{Binding ArrangeWindowsCommand}" />
+                    <Button Content="Stop All"
+                            Command="{Binding StopAllCommand}" />
+                </WrapPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="4">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="16" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}">
+                    <StackPanel>
+                        <TextBlock Text="Shell status" Style="{StaticResource EyebrowStyle}" />
+                        <TextBlock Text="{Binding DependencyHeadline}" Style="{StaticResource MetricValueStyle}" Margin="0,4,0,0" />
+                        <TextBlock Text="{Binding DependencyDetail}" Style="{StaticResource SectionCaptionStyle}" Margin="0,8,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}" Background="{StaticResource AccentSoftBrush}" BorderBrush="{StaticResource AccentBrush}">
+                    <StackPanel>
+                        <TextBlock Text="Capture path" Style="{StaticResource EyebrowStyle}" />
+                        <TextBlock Text="{Binding CaptureTransportHeadline}" Style="{StaticResource MetricValueStyle}" Margin="0,4,0,0" />
+                        <TextBlock Text="{Binding CaptureTransportDetail}" Style="{StaticResource SectionCaptionStyle}" Margin="0,8,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Column="4" Style="{StaticResource PanelBorderStyle}">
+                    <StackPanel>
+                        <TextBlock Text="Cast profile" Style="{StaticResource EyebrowStyle}" />
+                        <TextBlock Text="{Binding ProfileSummary}" Style="{StaticResource MetricValueStyle}" Margin="0,4,0,0" />
+                        <TextBlock Text="Capture source, bitrate, and layout are explicit so the operator surface reflects what scrcpy can actually stream."
+                                   Style="{StaticResource SectionCaptionStyle}"
+                                   Margin="0,8,0,0" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="340" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <TextBlock Text="Cast controls" Style="{StaticResource SectionTitleStyle}" />
+                            <Border Width="56"
+                                    Height="3"
+                                    HorizontalAlignment="Left"
+                                    Margin="0,0,0,10"
+                                    Background="{StaticResource AccentBrush}"
+                                    CornerRadius="1.5" />
+                            <TextBlock Text="Choose a source on each headset row, then tune bitrate and layout."
+                                       Style="{StaticResource SectionCaptionStyle}" />
+
+                            <TextBlock Text="Capture source" Style="{StaticResource EyebrowStyle}" />
+                            <TextBlock Text="Each Quest row has its own feed picker. Live casts open in a resizable host window with the same controls attached to the video."
+                                       Style="{StaticResource SectionCaptionStyle}" />
+                            <TextBlock Text="{Binding DisplayGuideText}" Style="{StaticResource MicroCaptionStyle}" Margin="0,4,0,12" />
+
+                            <TextBlock Text="Max size" Style="{StaticResource EyebrowStyle}" />
+                            <TextBox Text="{Binding MaxSizeText, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Text="Bitrate (Mbps)" Style="{StaticResource EyebrowStyle}" />
+                            <TextBox Text="{Binding VideoBitRateText, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Text="Max FPS" Style="{StaticResource EyebrowStyle}" />
+                            <TextBox Text="{Binding MaxFpsText, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Text="Window layout" Style="{StaticResource EyebrowStyle}" />
+                            <ComboBox ItemsSource="{Binding LayoutModes}"
+                                      SelectedItem="{Binding SelectedLayoutMode}" />
+
+                            <CheckBox Content="Enable audio"
+                                      IsChecked="{Binding EnableAudio}" />
+                            <CheckBox Content="Allow headset input through scrcpy"
+                                      IsChecked="{Binding EnableControl}" />
+                            <CheckBox Content="Stay awake while casting"
+                                      IsChecked="{Binding StayAwake}" />
+
+                            <Border Style="{StaticResource InsetPanelStyle}" Margin="0,14,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="Toolchain" Style="{StaticResource EyebrowStyle}" />
+                                    <TextBlock Text="scrcpy" Style="{StaticResource EyebrowStyle}" Margin="0,10,0,0" />
+                                    <TextBlock Text="{Binding ScrcpyPath}"
+                                               FontFamily="{StaticResource MonoFont}"
+                                               FontSize="11"
+                                               TextWrapping="Wrap" />
+                                    <TextBlock Text="adb" Style="{StaticResource EyebrowStyle}" Margin="0,10,0,0" />
+                                    <TextBlock Text="{Binding AdbPath}"
+                                               FontFamily="{StaticResource MonoFont}"
+                                               FontSize="11"
+                                               TextWrapping="Wrap" />
+                                    <TextBlock Text="workspace" Style="{StaticResource EyebrowStyle}" Margin="0,10,0,0" />
+                                    <TextBlock Text="{Binding RepoRoot}"
+                                               FontFamily="{StaticResource MonoFont}"
+                                               FontSize="11"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+
+                <Grid Grid.Column="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="16" />
+                        <RowDefinition Height="290" />
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0" Style="{StaticResource PanelBorderStyle}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="12" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Grid.Row="0">
+                                <TextBlock Text="Connected headsets" Style="{StaticResource SectionTitleStyle}" />
+                                <Border Width="56"
+                                        Height="3"
+                                        HorizontalAlignment="Left"
+                                        Margin="0,0,0,10"
+                                        Background="{StaticResource AccentBrush}"
+                                        CornerRadius="1.5" />
+                                <TextBlock Text="One row per Quest. Pick a source, then launch, stop, Wi-Fi handoff, and proximity."
+                                           Style="{StaticResource SectionCaptionStyle}" />
+                            </StackPanel>
+
+                            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding Devices}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type viewModels:DeviceRowViewModel}">
+                                            <Border Margin="0,0,0,12"
+                                                    Background="{StaticResource PanelAltBrush}"
+                                                    BorderBrush="{Binding StatusBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="4" />
+                                                        <ColumnDefinition Width="2.2*" />
+                                                        <ColumnDefinition Width="1.25*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <Border Grid.Column="0"
+                                                            Background="{Binding StatusBrush}"
+                                                            CornerRadius="7,0,0,7" />
+
+                                                    <StackPanel Grid.Column="1" Margin="14,12,16,12">
+                                                        <TextBlock Text="{Binding DisplayName}" FontSize="20" FontWeight="Bold" />
+                                                        <TextBlock Text="{Binding Serial}"
+                                                                   FontFamily="{StaticResource MonoFont}"
+                                                                   FontSize="12"
+                                                                   Margin="0,4,0,0" />
+                                                        <TextBlock Text="{Binding DeviceSummary}"
+                                                                   Style="{StaticResource MicroCaptionStyle}"
+                                                                   Margin="0,8,0,0" />
+                                                    </StackPanel>
+
+                                                    <StackPanel Grid.Column="2" Margin="0,12,16,12">
+                                                        <TextBlock Text="{Binding SessionStateText}"
+                                                                   FontSize="16"
+                                                                   FontWeight="Bold"
+                                                                   Foreground="{Binding StatusBrush}" />
+                                                        <TextBlock Text="{Binding SessionDetailText}"
+                                                                   Style="{StaticResource MicroCaptionStyle}"
+                                                                   Margin="0,6,0,0" />
+                                                        <TextBlock Text="Selected source"
+                                                                   Style="{StaticResource EyebrowStyle}"
+                                                                   Margin="0,10,0,0" />
+                                                        <TextBlock Text="{Binding SelectedCaptureTargetText}"
+                                                                   Style="{StaticResource MicroCaptionStyle}"
+                                                                   Margin="0,4,0,0" />
+                                                        <TextBlock Text="{Binding EndpointText}"
+                                                                   Style="{StaticResource MicroCaptionStyle}"
+                                                                   Margin="0,8,0,0" />
+                                                    </StackPanel>
+
+                                                    <StackPanel Grid.Column="3"
+                                                                Margin="0,12,12,12"
+                                                                VerticalAlignment="Top">
+                                                        <TextBlock Text="{Binding CaptureTargetLabelText}"
+                                                                   Style="{StaticResource EyebrowStyle}" />
+                                                        <ComboBox ItemsSource="{Binding CaptureTargets}"
+                                                                  SelectedItem="{Binding SelectedCaptureTarget}"
+                                                                  DisplayMemberPath="SelectionText"
+                                                                  IsEnabled="{Binding CanEditCaptureTarget}"
+                                                                  ToolTip="{Binding CaptureTargetHintText}"
+                                                                  MinWidth="250"
+                                                                  Margin="0,4,0,0" />
+                                                        <TextBlock Text="{Binding CaptureTargetHintText}"
+                                                                   Style="{StaticResource MicroCaptionStyle}"
+                                                                   Margin="0,6,0,10" />
+                                                        <TextBlock Text="{Binding ProximityStatusText}"
+                                                                   Style="{StaticResource MicroCaptionStyle}"
+                                                                   Margin="0,0,0,10" />
+
+                                                        <WrapPanel>
+                                                            <Button Content="Start Cast"
+                                                                    Command="{Binding StartCastCommand}"
+                                                                    Style="{StaticResource PrimaryActionButtonStyle}" />
+                                                            <Button Content="Stop"
+                                                                    Command="{Binding StopCastCommand}" />
+                                                            <Button Content="Wi-Fi ADB"
+                                                                    Command="{Binding EnableWirelessCommand}" />
+                                                            <Button Content="Wake"
+                                                                    Command="{Binding WakeCommand}" />
+                                                            <Button Content="{Binding CastWindowPinText}"
+                                                                    Command="{Binding ToggleCastWindowPinCommand}"
+                                                                    ToolTip="{Binding CastWindowPinHintText}" />
+                                                            <Button Content="{Binding ToggleProximityText}"
+                                                                    Command="{Binding ToggleProximityCommand}"
+                                                                    ToolTip="{Binding ToggleProximityHintText}" />
+                                                        </WrapPanel>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="0.95*" />
+                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="1.05*" />
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="12" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0">
+                                    <TextBlock Text="Active sessions" Style="{StaticResource SectionTitleStyle}" />
+                                    <Border Width="56"
+                                            Height="3"
+                                            HorizontalAlignment="Left"
+                                            Margin="0,0,0,10"
+                                            Background="{StaticResource AccentBrush}"
+                                            CornerRadius="1.5" />
+                                    <TextBlock Text="Managed scrcpy processes."
+                                               Style="{StaticResource SectionCaptionStyle}" />
+                                </StackPanel>
+
+                                <ListBox Grid.Row="2"
+                                         ItemsSource="{Binding Sessions}"
+                                         Background="Transparent"
+                                         BorderThickness="0">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type viewModels:SessionCardViewModel}">
+                                            <Border Margin="0,0,0,10"
+                                                    Background="{StaticResource PanelAltBrush}"
+                                                    BorderBrush="{Binding StatusBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="4" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <Border Grid.Column="0"
+                                                            Background="{Binding StatusBrush}"
+                                                            CornerRadius="7,0,0,7" />
+
+                                                    <StackPanel Grid.Column="1" Margin="14,12,16,12">
+                                                        <TextBlock Text="{Binding Title}" FontWeight="Bold" FontSize="15" />
+                                                        <TextBlock Text="{Binding Detail}"
+                                                                   FontFamily="{StaticResource MonoFont}"
+                                                                   FontSize="11"
+                                                                   Margin="0,4,0,0" />
+                                                        <TextBlock Text="{Binding SourceText}" Style="{StaticResource MicroCaptionStyle}" Margin="0,6,0,0" />
+                                                        <TextBlock Text="{Binding LastMessage}" Style="{StaticResource MicroCaptionStyle}" Margin="0,6,0,0" />
+                                                    </StackPanel>
+
+                                                    <StackPanel Grid.Column="2" Margin="0,12,12,12">
+                                                        <TextBlock Text="{Binding StateText}"
+                                                                   FontWeight="Bold"
+                                                                   Foreground="{Binding StatusBrush}" />
+                                                        <TextBlock Text="{Binding ProcessText}" Style="{StaticResource MicroCaptionStyle}" Margin="0,6,0,0" />
+                                                        <TextBlock Text="{Binding StartedAtText}" Style="{StaticResource MicroCaptionStyle}" Margin="0,6,0,0" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="12" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0">
+                                    <TextBlock Text="Operator log" Style="{StaticResource SectionTitleStyle}" />
+                                    <Border Width="56"
+                                            Height="3"
+                                            HorizontalAlignment="Left"
+                                            Margin="0,0,0,10"
+                                            Background="{StaticResource AccentBrush}"
+                                            CornerRadius="1.5" />
+                                    <TextBlock Text="ADB, launch, and window events."
+                                               Style="{StaticResource SectionCaptionStyle}" />
+                                </StackPanel>
+
+                                <ListBox Grid.Row="2"
+                                         ItemsSource="{Binding Logs}"
+                                         Background="Transparent"
+                                         BorderThickness="0">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type viewModels:LogEntryViewModel}">
+                                            <Border Margin="0,0,0,10"
+                                                    Background="{StaticResource PanelAltBrush}"
+                                                    BorderBrush="{Binding StatusBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="4" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <Border Grid.Column="0"
+                                                            Background="{Binding StatusBrush}"
+                                                            CornerRadius="7,0,0,7" />
+
+                                                    <StackPanel Grid.Column="1" Margin="14,12,12,12">
+                                                        <TextBlock Text="{Binding TimeText}" Style="{StaticResource EyebrowStyle}" />
+                                                        <TextBlock Text="{Binding Message}" FontWeight="Bold" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                                        <TextBlock Text="{Binding Detail}" Style="{StaticResource MicroCaptionStyle}" Margin="0,6,0,0" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

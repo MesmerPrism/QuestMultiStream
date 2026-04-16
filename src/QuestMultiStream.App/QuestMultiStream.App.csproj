@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\QuestMultiStream.Core\QuestMultiStream.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\quest-multi-stream.ico" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>QuestMultiStream.App</RootNamespace>
+    <AssemblyName>QuestMultiStream.App</AssemblyName>
+    <Title>Quest Multi Stream</Title>
+    <ApplicationIcon>Assets\quest-multi-stream.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <PublishSingleFile>false</PublishSingleFile>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+</Project>

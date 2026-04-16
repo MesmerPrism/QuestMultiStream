@@ -1,0 +1,11 @@
+.vs/
+bin/
+obj/
+out/
+artifacts/
+TestResults/
+tools/scrcpy/
+
+*.user
+*.suo
+*.cache

@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>QuestMultiStream.Core</RootNamespace>
+    <AssemblyName>QuestMultiStream.Core</AssemblyName>
+  </PropertyGroup>
+</Project>
