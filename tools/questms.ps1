@@ -15,7 +15,8 @@ param(
     [switch]$FixEmbeddedSize,
     [switch]$RefreshPublishedBuild,
     [int]$KeepPublishedBuilds = 3,
-    [int]$Tail = 40
+    [int]$Tail = 40,
+    [string]$OutputDirectory
 )
 
 Set-StrictMode -Version Latest
@@ -562,6 +563,22 @@ function Invoke-RefreshShortcuts {
     & $scriptPath -RefreshPublishedBuild:$RefreshPublishedBuild
 }
 
+function Invoke-VisualTest {
+    $runningProcess = Get-RunningAppProcess
+    if (-not $runningProcess) {
+        $null = Invoke-Run
+        Start-Sleep -Seconds 3
+    }
+
+    $scriptPath = Join-Path $repoRoot 'tools\app\Capture-VisualState.ps1'
+    if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
+        & $scriptPath
+    }
+    else {
+        & $scriptPath -OutputDirectory $OutputDirectory
+    }
+}
+
 function Invoke-VerifyLaunch {
     $process = Invoke-Run
     Start-Sleep -Seconds 5
@@ -702,6 +719,7 @@ Commands:
   devices           Dump Quest device visibility through adb and hzdb.
   logs              Print the latest launcher/app logs and tail them.
   inspect-cast      Inspect the hosted cast window; pass -FixEmbeddedSize to repair a live mismatch.
+  visual-test       Capture screenshot evidence for the app and visible cast windows.
   refresh-shortcuts Recreate the desktop and Start Menu shortcuts.
   help              Show this message.
 
@@ -713,6 +731,7 @@ Useful options:
   -PublishConfiguration Release
   -RuntimeIdentifier win-x64
   -Tail 40
+  -OutputDirectory <path>
 '@
 }
 
@@ -753,6 +772,9 @@ try {
         }
         'inspect-cast' {
             Invoke-InspectCast
+        }
+        'visual-test' {
+            Invoke-VisualTest | Format-List *
         }
         'refresh-shortcuts' {
             Invoke-RefreshShortcuts

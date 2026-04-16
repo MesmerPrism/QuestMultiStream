@@ -13,7 +13,16 @@ layer changes need live confirmation against a connected Quest.
    powershell -ExecutionPolicy Bypass -File .\tools\questms.ps1 inspect-cast
    ```
 
-4. Compare:
+4. Capture screenshot evidence for the current visible state:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\tools\questms.ps1 visual-test
+   ```
+
+5. Review the saved PNGs and `manifest.json` under
+   `artifacts\visual-tests\<timestamp>\`.
+
+6. Compare:
    - `EmbeddedHostSize`
    - `ScrcpyChildSize`
 

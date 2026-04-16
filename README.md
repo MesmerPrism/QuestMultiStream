@@ -74,6 +74,7 @@ Useful commands:
 - `devices`
 - `logs`
 - `inspect-cast`
+- `visual-test`
 - `refresh-shortcuts`
 
 `run` is single-instance aware: if Quest Multi Stream is already open, the CLI
@@ -85,7 +86,13 @@ Recommended live workflow:
 powershell -ExecutionPolicy Bypass -File .\tools\questms.ps1 doctor
 powershell -ExecutionPolicy Bypass -File .\tools\questms.ps1 verify-launch
 powershell -ExecutionPolicy Bypass -File .\tools\questms.ps1 inspect-cast -FixEmbeddedSize
+powershell -ExecutionPolicy Bypass -File .\tools\questms.ps1 visual-test
 ```
+
+`visual-test` captures the visible Quest Multi Stream window(s) and any visible
+`scrcpy` cast windows into `artifacts\visual-tests\<timestamp>\` together with a
+`manifest.json`, so UI and cast regressions can be checked from the CLI without
+manual screenshot tooling.
 
 ## Windows note
 
