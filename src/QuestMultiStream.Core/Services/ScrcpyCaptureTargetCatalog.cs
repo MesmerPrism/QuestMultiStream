@@ -38,9 +38,15 @@ public static class ScrcpyCaptureTargetCatalog
             materialized.Insert(0, ScrcpyCaptureTarget.DefaultDisplay);
         }
 
-        return materialized
+        var normalized = materialized
             .Select(DecorateDisplay)
-            .ToArray();
+            .ToList();
+
+        var defaultDisplay = normalized.FirstOrDefault(target => ResolveDisplayId(target) == 0)
+            ?? ScrcpyCaptureTarget.DefaultDisplay;
+
+        normalized.Add(CreateCompositeDisplay(defaultDisplay));
+        return normalized.ToArray();
     }
 
     private static IReadOnlyList<ScrcpyCaptureTarget> NormalizeCameras(IReadOnlyList<ScrcpyCaptureTarget>? cameras)
@@ -87,6 +93,29 @@ public static class ScrcpyCaptureTargetCatalog
             LaunchCameraId = cameraId,
             Detail = detail,
             SortOrder = 20
+        };
+    }
+
+    private static ScrcpyCaptureTarget CreateCompositeDisplay(ScrcpyCaptureTarget defaultDisplay)
+    {
+        var detail = BuildDetail(
+            defaultDisplay.Width is int width && defaultDisplay.Height is int height
+                ? $"{width}x{height}"
+                : null,
+            "experimental fused crop from Display 0");
+
+        return new ScrcpyCaptureTarget(
+            ScrcpyCaptureTargetKind.Display,
+            "display-0-composite",
+            "Composite View",
+            detail)
+        {
+            Width = defaultDisplay.Width,
+            Height = defaultDisplay.Height,
+            LaunchDisplayId = 0,
+            PresentationMode = ScrcpyPresentationMode.StereoCompositeExperimental,
+            SortOrder = 10,
+            IsExperimental = true
         };
     }
 

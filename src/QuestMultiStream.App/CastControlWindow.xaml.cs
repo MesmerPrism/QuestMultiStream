@@ -28,6 +28,7 @@ public partial class CastControlWindow : Window
     private bool _applyingOverlayBounds;
     private bool _isFullscreen;
     private bool _isResizingWithGrip;
+    private bool _compositeRenderPending;
     private IntPtr _windowHandle;
     private IntPtr _ownedSessionHandle;
     private WindowLayoutBounds? _restoreBounds;
@@ -85,6 +86,8 @@ public partial class CastControlWindow : Window
         }
 
         _session = session;
+        ResetCompositePreview();
+        UpdateCompositePresentationState();
         UpdateWindowState();
         SyncToSessionWindow();
         _followTimer.Start();
@@ -163,6 +166,7 @@ public partial class CastControlWindow : Window
     {
         _followTimer.Stop();
         UnsubscribeRow(_row);
+        ResetCompositePreview();
 
         SourceInitialized -= OnSourceInitialized;
         Loaded -= OnLoaded;
@@ -173,7 +177,10 @@ public partial class CastControlWindow : Window
     }
 
     private void OnFollowTimerTick(object? sender, EventArgs e)
-        => SyncToSessionWindow();
+    {
+        SyncToSessionWindow();
+        _ = RefreshCompositePreviewAsync();
+    }
 
     private void SyncToSessionWindow()
     {
@@ -184,6 +191,7 @@ public partial class CastControlWindow : Window
 
         if (!_session.IsActive || !_session.RefreshWindowHandle() || _session.WindowHandle == IntPtr.Zero)
         {
+            ResetCompositePreview();
             if (IsVisible)
             {
                 Hide();
@@ -192,6 +200,7 @@ public partial class CastControlWindow : Window
             return;
         }
 
+        UpdateCompositePresentationState();
         TrySetOwner();
 
         if (_pendingSessionBounds is { } pendingBounds && _session.TryMove(pendingBounds))
@@ -313,6 +322,106 @@ public partial class CastControlWindow : Window
         }
     }
 
+    private bool IsCompositeModeActive()
+        => _session.LaunchProfile.PresentationMode == ScrcpyPresentationMode.StereoCompositeExperimental;
+
+    private void UpdateCompositePresentationState()
+    {
+        if (CompositeViewportHost is null || CompositeStatusText is null || CompositeBackdrop is null)
+        {
+            return;
+        }
+
+        var isComposite = IsCompositeModeActive();
+        CompositeBackdrop.Visibility = isComposite ? Visibility.Visible : Visibility.Collapsed;
+        CompositeViewportHost.Visibility = isComposite ? Visibility.Visible : Visibility.Collapsed;
+        if (!isComposite)
+        {
+            ResetCompositePreview();
+            return;
+        }
+
+        if (CompositePreviewImage.Source is null)
+        {
+            CompositeStatusText.Text = "Composite preview is warming up.";
+            CompositeStatusText.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void ResetCompositePreview()
+    {
+        _compositeRenderPending = false;
+        if (CompositePreviewImage is not null)
+        {
+            CompositePreviewImage.Source = null;
+        }
+
+        if (CompositeStatusText is not null)
+        {
+            CompositeStatusText.Text = "Composite preview is warming up.";
+            CompositeStatusText.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private async Task RefreshCompositePreviewAsync()
+    {
+        if (!IsLoaded || !IsVisible || !IsCompositeModeActive() || _compositeRenderPending)
+        {
+            return;
+        }
+
+        if (!_session.IsActive || !_session.RefreshWindowHandle() || _session.WindowHandle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        _compositeRenderPending = true;
+        var captureHandle = _session.WindowHandle;
+        var expectedSerial = _row.Serial;
+
+        try
+        {
+            var preview = await Task.Run(() => StereoCompositePreviewRenderer.TryRender(captureHandle)).ConfigureAwait(false);
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (!IsCompositeModeActive() ||
+                    !string.Equals(_row.Serial, expectedSerial, StringComparison.OrdinalIgnoreCase) ||
+                    !_session.RefreshWindowHandle() ||
+                    _session.WindowHandle == IntPtr.Zero ||
+                    _session.WindowHandle != captureHandle)
+                {
+                    return;
+                }
+
+                if (preview is null)
+                {
+                    CompositePreviewImage.Source = null;
+                    CompositeStatusText.Text = "Composite preview is waiting for fresh frames.";
+                    CompositeStatusText.Visibility = Visibility.Visible;
+                    return;
+                }
+
+                CompositePreviewImage.Source = preview;
+                CompositeStatusText.Visibility = Visibility.Collapsed;
+            });
+        }
+        catch
+        {
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (CompositeStatusText is not null)
+                {
+                    CompositeStatusText.Text = "Composite preview capture failed.";
+                    CompositeStatusText.Visibility = Visibility.Visible;
+                }
+            });
+        }
+        finally
+        {
+            _compositeRenderPending = false;
+        }
+    }
+
     private void OnMinimizeWindowClicked(object sender, RoutedEventArgs e)
     {
         _session.TryMinimizeWindow();
@@ -359,6 +468,45 @@ public partial class CastControlWindow : Window
         }
     }
 
+    private void OnInteractiveControlPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        ActivateOverlayWindow();
+    }
+
+    private void OnCaptureTargetMenuButtonClicked(object sender, RoutedEventArgs e)
+    {
+        ActivateOverlayWindow();
+        if (sender is not Button button)
+        {
+            return;
+        }
+
+        var menu = new ContextMenu
+        {
+            PlacementTarget = button,
+            Placement = PlacementMode.Bottom,
+            MinWidth = button.ActualWidth,
+            StaysOpen = false
+        };
+
+        foreach (var captureTarget in _row.CaptureTargets)
+        {
+            var menuItem = new MenuItem
+            {
+                Header = captureTarget.SelectionText,
+                IsCheckable = true,
+                IsChecked = Equals(_row.SelectedCaptureTarget, captureTarget),
+                StaysOpenOnClick = false,
+                Tag = captureTarget
+            };
+            menuItem.Click += OnCaptureTargetMenuItemClicked;
+            menu.Items.Add(menuItem);
+        }
+
+        button.ContextMenu = menu;
+        menu.IsOpen = true;
+    }
+
     private void OnHeaderMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton != MouseButton.Left || IsInteractiveHeaderSource(e.OriginalSource as DependencyObject))
@@ -374,6 +522,45 @@ public partial class CastControlWindow : Window
         {
         }
     }
+
+    private void ActivateOverlayWindow()
+    {
+        if (!IsVisible)
+        {
+            return;
+        }
+
+        try
+        {
+            Activate();
+            Focus();
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    private void OnCaptureTargetMenuItemClicked(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem menuItem ||
+            menuItem.Tag is not ScrcpyCaptureTarget selectedTarget ||
+            Equals(_row.SelectedCaptureTarget, selectedTarget))
+        {
+            return;
+        }
+
+        DesktopAppLog.Info(
+            $"Overlay capture menu click. Serial={_row.Serial}; " +
+            $"Selected={DescribeCaptureTarget(selectedTarget)}; " +
+            $"RowSelectedBefore={DescribeCaptureTarget(_row.SelectedCaptureTarget)}");
+
+        _row.SelectedCaptureTarget = selectedTarget;
+    }
+
+    private static string DescribeCaptureTarget(ScrcpyCaptureTarget? captureTarget)
+        => captureTarget is null
+            ? "<null>"
+            : $"{captureTarget.Kind}:{captureTarget.Id}:display={captureTarget.LaunchDisplayId?.ToString() ?? "<null>"}:camera={captureTarget.LaunchCameraId ?? "<null>"}:mode={captureTarget.PresentationMode}";
 
     private bool IsInteractiveHeaderSource(DependencyObject? source)
         => FindAncestor<Button>(source) is not null ||

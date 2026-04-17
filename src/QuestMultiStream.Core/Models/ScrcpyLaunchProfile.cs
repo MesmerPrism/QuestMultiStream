@@ -14,6 +14,8 @@ public sealed class ScrcpyLaunchProfile
 
     public string? Angle { get; init; }
 
+    public ScrcpyPresentationMode PresentationMode { get; init; } = ScrcpyPresentationMode.Raw;
+
     public string CaptureTargetLabel { get; init; } = "Display 0 · default stereo mirror";
 
     public int MaxSize { get; init; } = 1344;
