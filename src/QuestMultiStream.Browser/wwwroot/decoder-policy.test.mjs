@@ -1,0 +1,5 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {DecoderPolicy} from './decoder-policy.mjs';
+test('hidden/resume keeps same stream and waits for next keyframe',()=>{const p=new DecoderPolicy();assert.equal(p.select({key:true,timestamp:1},0,true).decode,true);assert.equal(p.select({key:false,timestamp:2},0,false).reset,true);assert.equal(p.select({key:false,timestamp:3},0,false).reset,false);assert.equal(p.select({key:false,timestamp:4},0,true).decode,false);assert.deepEqual(p.select({key:true,timestamp:5},0,true),{decode:true,reset:false,prepend:true});});
+test('queue pressure drops obsolete deltas and recovers at new keyframe',()=>{const p=new DecoderPolicy();p.select({key:true,timestamp:10},0,true);assert.deepEqual(p.select({key:false,timestamp:11},9,true),{decode:false,reset:true,prepend:false});assert.equal(p.select({key:false,timestamp:12},0,true).decode,false);assert.equal(p.select({key:true,timestamp:13},0,true).prepend,true);assert.equal(p.select({key:true,timestamp:13},0,true).decode,false);assert.equal(p.select({key:false,timestamp:14},0,true).decode,true);});
