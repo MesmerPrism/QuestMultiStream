@@ -8,7 +8,9 @@ using System.Text.Json;
 using QuestMultiStream.Browser;
 
 if (args.Contains("--self-test")) { await SelfTests.Run(); return; }
+using var operatorStop = new CancellationTokenSource();
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddSingleton<IHostLifetime>(new OwnedConsoleLifetime(operatorStop.Cancel));
 builder.WebHost.UseUrls("http://127.0.0.1:43118");
 var app = builder.Build();
 var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
@@ -17,18 +19,24 @@ if (args.Length % 2 != 0 || args.Where((_,i)=>i%2==0).Any(a=>a is not "--selecti
 string? Option(string key) { var i = Array.IndexOf(args,key); return i < 0 ? null : args[i+1]; }
 var selectionPath = Option("--selection");
 using var selectionLock = selectionPath is null ? null : File.Open(selectionPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-HostSelection? selection = selectionPath is null ? null : JsonSerializer.Deserialize<HostSelection>(File.ReadAllText(selectionPath));
+HostSelection? selection = selectionPath is null ? null : JsonSerializer.Deserialize<HostSelection>(File.ReadAllText(selectionPath), new JsonSerializerOptions { Converters = { new StrictUtcDateConverter() } });
 selection?.Validate();
-var hostEnd = Option("--host-end") is string end ? DateTimeOffset.Parse(end) : (DateTimeOffset?)null;
+var hostEndInput = Option("--host-end");
+if (selection is not null && hostEndInput is null) throw new InvalidOperationException("Live host requires an explicit lifetime");
+if (selection?.CaptureLifetime == MonitorLifetime.UntilStop && hostEndInput != MonitorLifetime.UntilStop) throw new InvalidOperationException("Until-stop capture requires until-stop host");
+var hostEnd = hostEndInput is null or MonitorLifetime.UntilStop ? (DateTimeOffset?)null : MonitorLifetime.ParseUtc(hostEndInput);
 if(hostEnd is not null && (hostEnd <= DateTimeOffset.UtcNow || selection is not null && hostEnd < selection.DeadlineUtc)) throw new InvalidOperationException("Host end must be future and at or after selected capture deadline");
 var fixture = Option("--fixture");
 if (fixture is not null && (selection is not null || !Path.IsPathFullyQualified(fixture) || !File.Exists(fixture))) throw new InvalidOperationException("Fixture requires offline mode and an existing selected absolute file");
 var busy = new HashSet<string>(); var sync = new object();
+
+_ = Task.Run(async () => { try { await Task.Delay(Timeout.Infinite, operatorStop.Token); } catch (OperationCanceledException) {} await MonitorLifetime.StopAfterRetirement(() => { lock(sync) return busy.Count == 0; }, app.Lifetime.StopApplication); });
 app.UseWebSockets(); app.UseDefaultFiles(); app.UseStaticFiles();
 bool Authorized(HttpContext c) => CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(c.Request.Query["token"].ToString()), Encoding.ASCII.GetBytes(token));
 app.MapGet("/api/sources", (HttpContext c) => Authorized(c) ? Results.Json(selection?.Sources.Select(s => new {s.Id, s.Label, s.DisplayId, s.Crop}) ?? []) : Results.Unauthorized());
 app.MapGet("/api/fixture", (HttpContext c) => Authorized(c) ? Results.Json(new { available = fixture is not null }) : Results.Unauthorized());
 app.MapGet("/fixture", (HttpContext c) => Authorized(c) && fixture is not null ? Results.File(fixture, "video/mp4", enableRangeProcessing: true) : Results.NotFound());
+app.MapPost("/operator-stop", (HttpContext c) => { if (!Authorized(c) || c.Request.Headers.Origin != "http://127.0.0.1:43118") return Results.Unauthorized(); operatorStop.Cancel(); return Results.Accepted(value: new { state = "requested", actual_retirement_pending = true }); });
 app.MapGet("/stream/{id}", async (HttpContext context, string id) =>
 {
     if (!Authorized(context) || context.Request.Headers.Origin != "http://127.0.0.1:43118" || !context.WebSockets.IsWebSocketRequest)
@@ -36,11 +44,11 @@ app.MapGet("/stream/{id}", async (HttpContext context, string id) =>
     var source = selection?.Sources.SingleOrDefault(s => s.Id == id);
     if(hostEnd is not null && DateTimeOffset.UtcNow >= hostEnd){context.Response.StatusCode=410;return;}
     if (source is null) { context.Response.StatusCode = 404; return; }
-    lock(sync) { if (!busy.Add(id)) { context.Response.StatusCode = 409; return; } }
+    lock(sync) { if (operatorStop.IsCancellationRequested) { context.Response.StatusCode = 410; return; } if (!busy.Add(id)) { context.Response.StatusCode = 409; return; } }
     try
     {
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
-        await Capture(socket, selection!, source);
+        await Capture(socket, selection!, source, operatorStop.Token);
     }
     catch(Exception error) { app.Logger.LogError(error, "Selected capture failed; no replay"); }
     finally { lock(sync) busy.Remove(id); }
@@ -54,7 +62,7 @@ if(hostEnd is not null) _ = Task.Run(async()=>{
 });
 await app.RunAsync();
 
-static async Task Capture(WebSocket socket, HostSelection config, SourceSelection source)
+static async Task Capture(WebSocket socket, HostSelection config, SourceSelection source, CancellationToken operatorStop)
 {
     await config.Guard(source);
     using var adbLock = File.Open(config.Adb, FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -65,22 +73,22 @@ static async Task Capture(WebSocket socket, HostSelection config, SourceSelectio
     var scid = RandomNumberGenerator.GetInt32(1, int.MaxValue).ToString("x8");
     var remote = "/data/local/tmp/questms-browser-" + scid + ".jar";
     var evidence = new CaptureEvidence(config.EvidenceDirectory, "capture-" + scid);
-    evidence.Event("intent", new { source, remote, config.DeadlineUtc, config.DaemonPid, config.DaemonStartUtcTicks, config.AdbSha256, config.ServerSha256 });
+    evidence.Event("intent", new { source, remote, config.DeadlineUtc, config.DaemonPid, config.DaemonStartUtcTicks, config.AdbSha256, config.ServerSha256, config.CaptureLifetime });
     Process? child = null; Task<DrainResult>? output = null, error = null;
     TcpClient? tcp = null; var forwarded = false; var pushed = false;
     Exception? failure = null;
-    using var deadline = new CancellationTokenSource(config.DeadlineUtc - DateTimeOffset.UtcNow);
+    using var deadline = MonitorLifetime.CaptureCancellation(config.DeadlineUtc, operatorStop);
     Task? monitor = null;
     using var receiveStop = new CancellationTokenSource();
     Task? receive = null; var browserClosed = false;
     try
     {
-        evidence.Event("push-intent");
+        deadline.Token.ThrowIfCancellationRequested(); evidence.Event("push-intent");
         await HostSelection.Command(config.Adb, ["-s", source.Serial, "push", config.Server, remote]); pushed = true;
-        evidence.Event("forward-intent");
+        deadline.Token.ThrowIfCancellationRequested(); evidence.Event("forward-intent");
         await HostSelection.Command(config.Adb, ["-s", source.Serial, "forward", "--no-rebind", "tcp:" + source.ForwardPort, "localabstract:scrcpy_" + scid]); forwarded = true;
         await config.Guard(source);
-        evidence.Event("server-start-intent");
+        deadline.Token.ThrowIfCancellationRequested(); evidence.Event("server-start-intent");
         child = HostSelection.Start(config.Adb, ["-s", source.Serial, "shell", "CLASSPATH=" + remote, "app_process", "/", "com.genymobile.scrcpy.Server", .. HostSelection.ServerArguments(source, scid)]);
         output = evidence.Drain(child.StandardOutput.BaseStream, "stdout"); error = evidence.Drain(child.StandardError.BaseStream, "stderr");
         evidence.SafeEvent("server-started", new { pid = child.Id, birth = child.StartTime.ToUniversalTime().Ticks });
@@ -105,6 +113,7 @@ static async Task Capture(WebSocket socket, HostSelection config, SourceSelectio
             await socket.SendAsync(packet, WebSocketMessageType.Binary, true, deadline.Token);
         }
     }
+    catch (OperationCanceledException) when (MonitorLifetime.OperatorStopWithinScope(operatorStop.IsCancellationRequested, config.DeadlineUtc, DateTimeOffset.UtcNow) && failure is null) { evidence.SafeEvent("operator-stop-observed"); }
     catch (OperationCanceledException) when (browserClosed && failure is null) { evidence.SafeEvent("browser-close-observed"); }
     catch (Exception e) { failure ??= e; evidence.SafeEvent("capture-failed", new { type = e.GetType().Name, e.Message }); }
     finally

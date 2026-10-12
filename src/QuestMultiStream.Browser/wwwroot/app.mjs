@@ -1,4 +1,5 @@
 import {eyeRects,cropRect,blendPixel,packet,avcCodec} from './view.mjs';
+import {decodedStatus} from './frame-status.mjs';
 import {DecoderPolicy} from './decoder-policy.mjs';
 const $=id=>document.getElementById(id),canvas=$('screen'),ctx=canvas.getContext('2d'),scratch=document.createElement('canvas'),sctx=scratch.getContext('2d'),video=$('local');
 const token=new URLSearchParams(location.hash.slice(1)).get('token')??sessionStorage.getItem('questms-local-token')??'';
@@ -25,10 +26,12 @@ function draw(image,w,h){
       const i=(y*a.w+x)*4,p=blendPixel(left.data.subarray(i,i+4),right.data.subarray(i,i+4),x/Math.max(1,a.w-1));left.data.set(p,i);
     }ctx.putImageData(left,0,0);
   }
+  const resumed=decodedStatus(mode,streamError,socket?.readyState===WebSocket.OPEN,w,h);if(resumed)status(resumed);
   $('empty').hidden=true;frames++;frameTime=performance.now();$('metrics').textContent=`${w} × ${h} source · ${frames} decoded frames · ${mode}`;
 }
 function stop(){generation++;socket?.close();socket=null;if(decoder&&decoder.state!=='closed')decoder.close();decoder=null;shared?.getTracks().forEach(t=>t.stop());shared=null;video.pause();video.srcObject=null;video.removeAttribute('src');if(blob)URL.revokeObjectURL(blob);blob=null;mode='';streamError='';config=null;waitingKey=true;frames=0;frameTime=0;$('metrics').textContent='No decoded frames';ctx.clearRect(0,0,canvas.width,canvas.height);$('empty').hidden=false;status('Disconnected');}
 $('stop').onclick=stop;
+$('stopHost').onclick=async()=>{try{const r=await fetch('/operator-stop?token='+encodeURIComponent(token),{method:'POST'});if(!r.ok)throw new Error('Monitor stop denied: '+r.status);status('Monitor stop requested · actual capture cleanup pending');}catch(e){status(e.message);}};
 $('connect').onclick=async()=>{
   stop();const id=$('source').value;if(!id)return;const current=generation;mode='Live host';
   if(!window.VideoDecoder){status('WebCodecs requires a supported browser and secure context');return;}

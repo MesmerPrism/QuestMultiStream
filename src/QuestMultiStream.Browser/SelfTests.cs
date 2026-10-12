@@ -41,7 +41,34 @@ internal static class SelfTests
         await StartupControls();
         await EvidenceControls();
         await CloseControls();
+        await LifetimeControls();
         Console.WriteLine("PASS actual fragmented packet/header/EOF, malformed length/codec/dummy, truncated body, owner display/crop profile controls; no device operations");
+    }
+    static async Task LifetimeControls()
+    {
+        var original = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = new("de-DE");
+            if (MonitorLifetime.ParseUtc("2026-10-12T01:32:12.3158427+00:00").Offset != TimeSpan.Zero) throw new Exception("UTC offset drift");
+            foreach (var text in new[] {"10/11/2026 21:10:00", "12.10.2026 01:32:00", "2026-10-12T01:32:00+02:00", "2026-02-30T01:32:00Z"})
+            { try { MonitorLifetime.ParseUtc(text); throw new Exception("Locale/invalid date admitted"); } catch (InvalidOperationException) {} }
+            var options = new JsonSerializerOptions { Converters = {new StrictUtcDateConverter()} };
+            try { JsonSerializer.Deserialize<DateTimeOffset>("\"10/11/2026 21:10:00\"", options); throw new Exception("Locale JSON deadline admitted"); } catch (InvalidOperationException) {}
+            MonitorLifetime.ValidateCapture(MonitorLifetime.UntilStop, null, DateTimeOffset.UtcNow, true);
+            foreach (var bad in new[] {("unknown",(DateTimeOffset?)null), (MonitorLifetime.Bounded,(DateTimeOffset?)null), (MonitorLifetime.UntilStop,(DateTimeOffset?)DateTimeOffset.UtcNow.AddHours(1))})
+            { try { MonitorLifetime.ValidateCapture(bad.Item1,bad.Item2,DateTimeOffset.UtcNow,true); throw new Exception("Lifetime conflict admitted"); } catch (InvalidOperationException) {} }
+            using var stop = new CancellationTokenSource(); using var capture = MonitorLifetime.CaptureCancellation(null,stop.Token);
+            if(capture.IsCancellationRequested)throw new Exception("Until-stop spontaneously canceled");
+            stop.Cancel();if(!capture.IsCancellationRequested)throw new Exception("Operator stop did not cancel actual capture token");
+            if(MonitorLifetime.OperatorStopWithinScope(true,DateTimeOffset.UtcNow.AddSeconds(-1),DateTimeOffset.UtcNow))throw new Exception("Late stop relabeled actual expiry");
+            var retired=false;var stopped=false;
+            var waiter=MonitorLifetime.StopAfterRetirement(()=>retired,()=>stopped=true);
+            await Task.Delay(100);if(stopped||waiter.IsCompleted)throw new Exception("Pending native ownership falsely released");
+            retired=true;await waiter;if(!stopped)throw new Exception("Actual retirement did not complete stop");
+        }
+        finally {System.Globalization.CultureInfo.CurrentCulture=original;}
+        Console.WriteLine("PASS production ISO UTC/JSON under de-DE, closed lifetime shapes, until-stop cancellation and held retirement predicate; no device calls");
     }
     static async Task CloseControls()
     {

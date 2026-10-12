@@ -9,15 +9,15 @@ namespace QuestMultiStream.Browser;
 
 public sealed record SourceSelection(string Id, string Label, string Serial, string Canonical,
     string Boot, string LeaseId, int ForwardPort, int DisplayId = 0, string? Crop = null);
-public sealed record HostSelection(bool Enabled, DateTimeOffset DeadlineUtc, string Adb,
+public sealed record HostSelection(bool Enabled, DateTimeOffset? DeadlineUtc, string Adb,
     string AdbSha256, string Server, string ServerSha256, string Board, string BoardSha256, string PowerShell, string PowerShellSha256,
-    SourceSelection[] Sources, int DaemonPid, long DaemonStartUtcTicks, string EvidenceDirectory)
+    SourceSelection[] Sources, int DaemonPid, long DaemonStartUtcTicks, string EvidenceDirectory, string CaptureLifetime = MonitorLifetime.Bounded)
 {
     public static string Hash(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
     public void Validate(bool requireCurrentDeadline = true)
     {
         if (!Enabled) throw new InvalidOperationException("Live capture was not explicitly enabled by the host operator");
-        if (requireCurrentDeadline && DeadlineUtc <= DateTimeOffset.UtcNow) throw new InvalidOperationException("Capture selection expired");
+        MonitorLifetime.ValidateCapture(CaptureLifetime, DeadlineUtc, DateTimeOffset.UtcNow, requireCurrentDeadline);
         if (!Path.IsPathFullyQualified(EvidenceDirectory) || !Directory.Exists(EvidenceDirectory)) throw new InvalidOperationException("Private evidence directory must already exist");
         using (var daemon = Process.GetProcessById(DaemonPid))
             if (daemon.HasExited || daemon.StartTime.ToUniversalTime().Ticks != DaemonStartUtcTicks || !daemon.ProcessName.Equals("adb", StringComparison.OrdinalIgnoreCase))

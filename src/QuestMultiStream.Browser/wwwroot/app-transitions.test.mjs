@@ -1,0 +1,32 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+test('actual app callbacks recover status and preserve terminal errors/stop generation', async()=>{
+  const nodes=new Map(),intervals=[],requests=[];let clock=1000,liveDecoder,liveSocket;
+  const context={drawImage(){},clearRect(){},putImageData(){}};
+  const element=id=>{if(!nodes.has(id))nodes.set(id,{value:id==='source'?'q':id==='view'?'full':'',textContent:'',options:[{}],files:[],hidden:false,append(o){this.options.push(o);},getContext(){return context;},pause(){},removeAttribute(){}});return nodes.get(id);};
+  globalThis.document={hidden:false,getElementById:element,createElement:()=>({getContext:()=>context}),addEventListener(){}};
+  globalThis.location={hash:'#token=fixture',pathname:'/',host:'127.0.0.1:43118'};
+  globalThis.sessionStorage={getItem(){return null;},setItem(){}};globalThis.history={replaceState(){}};
+  globalThis.performance={now:()=>clock};globalThis.setInterval=f=>intervals.push(f);
+  globalThis.window={VideoDecoder:true};
+  globalThis.fetch=async(url,options)=>{requests.push({url,options});return {ok:true,json:async()=>url.startsWith('/api/sources')?[]:{available:false}};};
+  globalThis.WebSocket=class {static OPEN=1;constructor(){this.readyState=1;liveSocket=this;}close(){this.readyState=3;this.onclose?.();}};
+  globalThis.VideoDecoder=class {constructor(options){this.options=options;this.decodeQueueSize=0;this.state='configured';liveDecoder=this;}configure(){}close(){this.state='closed';}decode(){this.options.output({displayWidth:1344,displayHeight:704,close(){}});}};
+  globalThis.EncodedVideoChunk=class {constructor(options){Object.assign(this,options);}};
+  await import('./app.mjs?actual-callback-control');
+  await element('connect').onclick();liveSocket.onopen();
+  const body=(config,key,pts,data)=>{const b=new Uint8Array(12+data.length),v=new DataView(b.buffer);v.setBigUint64(0,(config?1n<<63n:0n)|(key?1n<<62n:0n)|BigInt(pts));v.setUint32(8,data.length);b.set(data,12);return b.buffer;};
+  await liveSocket.onmessage({data:body(true,false,0,[0,0,0,1,0x67,0x64,0,0x1f])});
+  const frame=async(key,pts)=>liveSocket.onmessage({data:body(false,key,pts,[0,0,1,0x65])});
+  await frame(true,1);assert.match(element('status').textContent,/H\.264 · Live host/);
+  liveDecoder.decodeQueueSize=9;await frame(false,2);assert.match(element('status').textContent,/Waiting for next keyframe/);
+  await frame(true,3);assert.match(element('status').textContent,/H\.264 · Live host/);
+  clock+=5000;intervals[0]();assert.match(element('status').textContent,/No new decoded frame/);
+  await frame(false,4);assert.match(element('status').textContent,/H\.264 · Live host/);
+  liveDecoder.options.error(new Error('fixture failure'));const error=element('status').textContent;
+  liveDecoder.options.output({displayWidth:1344,displayHeight:704,close(){}});assert.equal(element('status').textContent,error);
+  element('stop').onclick();liveDecoder.options.output({displayWidth:1344,displayHeight:704,close(){}});assert.equal(element('status').textContent,'Disconnected');
+  await element('stopHost').onclick();assert.match(element('status').textContent,/requested · actual capture cleanup pending/);
+  assert.equal(requests.filter(r=>r.options?.method==='POST').length,1);
+});
