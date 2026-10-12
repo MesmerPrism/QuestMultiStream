@@ -208,3 +208,32 @@ An explicitly selected `CaptureLifetime: "until-operator-stop"` with `DeadlineUt
 The authenticated, same-origin **Stop monitor** button requests cancellation of this host's captures and listener only. It does not stop headset apps, blending or keepawake. The response is queued, not proof of completion: the host waits for every owned capture's actual child exit, both pipe EOF and cleanup before listener shutdown. Ctrl+C uses the same owner request rather than the default immediate ASP.NET shutdown. Never force-stop a host with unresolved children. A late stop does not reclassify deadline expiry as successful capture. An until-stop host still needs a real port-lease heartbeat supervisor and held source/static/artifact/config inputs through actual exit; this option does not itself reserve or renew resources.
 
 Decoded progress restores the current H.264 label after stale-age or keyframe waiting, only for an open current live transport without an error. Late output cannot overwrite terminal error/closure truth. Registered controls invoke the actual browser callbacks using synthetic packets, and real child argv/production date-denial paths under German locale; these are source/host controls, not device or visual blend qualification.
+
+### Status qualification and command selection
+
+Successful selected projection reads derive typed `SourceOwnerValidated`
+provenance after MAC, publisher PID/birth, selected sources, session and actor
+checks. A static observation file cannot obtain that provenance by copying an
+owner label. Device/control rows identify validated observations at report time.
+
+Native signed authority expiry, last native frame adoption time, advancing
+counters and current socket knowledge remain independent. Older accepted reports
+with advancing frames display `advancing-reports` and their actual frame age;
+they do not assert an instantaneous live connection. Expired authority remains
+stale, a frozen counter remains unconfirmed, and absent socket evidence remains
+unknown. Headset screen mirror decoding is a separate capture status.
+
+The status API reports `commandTransportSelected`, `requestActions` and
+`executionVerified` separately. Selecting a closed authenticated transport does
+not certify that effects are ready or complete: the original owner rechecks its
+live guards at dispatch. A stop response without completed effects is shown as a
+pending request with physical closure unconfirmed. The current-owner controller
+supports cancellation requests only; repeated fresh establishment requires the
+owner constructor and lifecycle preparation described above.
+
+Routine ASP.NET request and static-file Information logs are filtered at the
+category level. Warnings/errors, the private startup viewer URL, application
+capture failures and all owned capture/control/native lifecycle journals remain.
+Standing owners must drain stdout/stderr with immediate file visibility (for
+example a one-byte FileStream buffer) so the private startup URL can be consumed
+without depending on later request logging to flush a parent buffer.

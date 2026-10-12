@@ -67,10 +67,16 @@ public sealed class HubProjectionSource : IDisposable
             try{new HubProjectionSource(badSelection);throw new Exception("Absent writer accepted");}catch(ArgumentException){}
             using(var exclusive=File.Open(badSelection,FileMode.Open,FileAccess.ReadWrite,FileShare.None)){}
             using var reader=new HubProjectionSource(input);Write(DateTimeOffset.UtcNow,actors);reader.Read();
+            var hub=new HubControl(null,reader);
+            var qualified=JsonSerializer.SerializeToElement(hub.Status(DateTimeOffset.UtcNow,true,["disconnect"]));
+            if(!qualified.GetProperty("ownerObservationAuthenticated").GetBoolean()||qualified.GetProperty("executionVerified").GetBoolean())throw new Exception("Projection authentication and execution readiness conflated");
+            var recorded=Path.Combine(directory,"recorded.json");File.WriteAllText(recorded,JsonSerializer.Serialize(new HubEvidence("questms.hub.observations.v1","Selected validated owner",selected.Generation,[]),HubControl.Json));
+            if(JsonSerializer.SerializeToElement(new HubControl(recorded).Status(DateTimeOffset.UtcNow)).GetProperty("ownerObservationAuthenticated").GetBoolean())throw new Exception("Copied owner label authenticated a static record");
             void Denied(Action change){change();try{reader.Read();throw new Exception("Invalid owner projection accepted");}catch(InvalidDataException){}}
             Denied(()=>Write(DateTimeOffset.UtcNow,actors,true));Denied(()=>Write(DateTimeOffset.UtcNow.AddSeconds(-11),actors));
             Denied(()=>Write(DateTimeOffset.UtcNow,new Dictionary<string,ProjectionActor>(actors){["Q"]=new("app-process.19.Q","9223372036854775801")}));
             Denied(()=>File.WriteAllText(source,"changed source"));
+            if(JsonSerializer.SerializeToElement(hub.Status(DateTimeOffset.UtcNow)).GetProperty("ownerObservationAuthenticated").GetBoolean())throw new Exception("Source drift retained authenticated provenance");
             Console.WriteLine("PASS modeled owner projection MAC, opaque native actor identity, freshness and source change guards; no device observations qualified");
         } finally{Directory.Delete(directory,true);}
     }

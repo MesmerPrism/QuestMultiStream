@@ -10,6 +10,11 @@ using QuestMultiStream.Browser;
 if (args.Contains("--self-test")) { await SelfTests.Run(); return; }
 using var operatorStop = new CancellationTokenSource();
 var builder = WebApplication.CreateBuilder(args);
+// Routine request/static-file information includes query authentication tokens
+// and overwhelms a standing observer. Preserve warnings/errors and the separate
+// owned capture/control/native lifecycle journals and genuine EOF accounting.
+builder.Logging.AddFilter("Microsoft.AspNetCore",LogLevel.Warning);
+builder.Logging.AddFilter("Microsoft.Hosting.Lifetime",LogLevel.Warning);
 builder.Services.AddSingleton<IHostLifetime>(new OwnedConsoleLifetime(operatorStop.Cancel));
 var portInput = Array.IndexOf(args, "--port");
 var port = portInput < 0 ? 43118 : int.Parse(args[portInput + 1]);
@@ -102,7 +107,7 @@ app.MapGet("/observe/{id}",async (HttpContext c,string id)=>{
         socket.Abort(); // Only this observer delivery. Never cancels the producer.
     } finally {stop.Cancel();if(receive is not null)await receive;}
 });
-app.MapGet("/api/hub", (HttpContext c) => Authorized(c) ? Results.Json(hub.Status(DateTimeOffset.UtcNow)) : Results.Unauthorized());
+app.MapGet("/api/hub", (HttpContext c) => Authorized(c) ? Results.Json(hub.Status(DateTimeOffset.UtcNow,hubBridge is not null,hubBridge?.Actions)) : Results.Unauthorized());
 app.MapGet("/api/hub/capabilities", (HttpContext c) => Authorized(c) ? Results.Json(new { bridgeSelected = hubBridge is not null, direction = "both", actions=hubBridge?.Actions??["establish","disconnect"],execution = "Owner must authenticate live authority; selection alone proves no readiness" }) : Results.Unauthorized());
 app.MapGet("/api/hub/actions/{requestId}", async (HttpContext c,string requestId) => {
     if (!Authorized(c)) return Results.Unauthorized();
