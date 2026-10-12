@@ -22,11 +22,23 @@ function Assert-BrowserHubPredecessor($disposition,$selection,$listenerPort,[scr
   if($eof.schema-cne'questms.browser_hub.host_eof_wait.v1'-or!$eof.exitKnown-or!$eof.reaped-or!$eof.actualOsExitWaitReturned-or!$eof.stdoutEof-or!$eof.stderrEof){throw 'Actual predecessor host exit and both EOF required'}
   if($retirement.pid-ne$eof.pid-or$retirement.birth-cne$eof.birth-or$retirement.actualExit-ne$eof.actualExit-or!$retirement.reaped-or!$retirement.stdoutEof-or!$retirement.stderrEof-or!$retirement.capturesRetired-or!$retirement.heldInputsVerified){throw 'Exact predecessor owned retirement required'}
   if(@($released.ownFreshLeases).Count-ne3){throw 'Exact predecessor three-port release required'}
+  foreach($field in @('proposalSha256','supervisorPid','supervisorBirth','pid','birth')){
+   if($null-eq$eof.$field-or$eof.$field.ToString()-cne$retirement.$field.ToString()-or$eof.$field.ToString()-cne$released.$field.ToString()){throw 'Predecessor receipt scope differs'}
+  }
+  if($eof.proposalSha256-cnotmatch'^[a-f0-9]{64}$'){throw 'Exact predecessor proposal identity required'}
+  if(@($retirement.ownFreshLeases).Count-ne3){throw 'Predecessor held lease inventory unavailable'}
+  foreach($lease in $released.ownFreshLeases){
+   if(@($retirement.ownFreshLeases|Where-Object {$_.id-ceq$lease.id-and$_.resource-ceq$lease.resource}).Count-ne1){throw 'Predecessor released lease join differs'}
+  }
+  if(@($released.ownFreshLeases.id|Select-Object -Unique).Count-ne3-or@($released.ownFreshLeases.resource|Select-Object -Unique).Count-ne3){throw 'Predecessor duplicate leases denied'}
+  foreach($pin in $disposition.sourcePins){if(@($retirement.heldPins|Where-Object {$_.path-ceq$pin.path-and$_.sha256-ceq$pin.sha256}).Count-lt1){throw 'Predecessor source was not held'}}
   $board=& $selection.PowerShell -NoProfile -File $selection.Board status --json|ConvertFrom-Json -DateKind String
   if($LASTEXITCODE-ne0){throw 'Live predecessor lease verification unavailable'}
   foreach($lease in $released.ownFreshLeases){if($board.active_leases|Where-Object {$_.id-ceq$lease.id}){throw 'Predecessor lease remains active'}}
   $live=Get-Process -Id $eof.pid -ErrorAction SilentlyContinue
   if($live-and$live.StartTime.ToUniversalTime().Ticks.ToString()-ceq$eof.birth){throw 'Retired predecessor process still present'}
+  $supervisor=Get-Process -Id $eof.supervisorPid -ErrorAction SilentlyContinue
+  if($supervisor-and$supervisor.StartTime.ToUniversalTime().Ticks.ToString()-ceq$eof.supervisorBirth){throw 'Predecessor supervisor still retains input handles'}
  } else {throw 'Unsupported predecessor disposition'}
  # A new scope never claims historical remote cleanup. Its existing Guard checks
  # current devices, daemon, source bytes and new port leases before any effect.

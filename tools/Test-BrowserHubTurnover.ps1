@@ -40,18 +40,15 @@ try {
   $child.WaitForExit();$raw=CompleteOwnedRaw $out $err $stdout $stderr $outPath $errPath
   if($child.ExitCode-ne0){throw 'Actual host stop failed'}
   foreach($path in @($outPath,$errPath)){$probe=[IO.File]::Open($path,'Open','ReadWrite','None');$probe.Dispose()}
-  $eofPath=Join-Path $dir 'HOST_EOF_WAIT.json';WriteReceipt $eofPath @{schema='questms.browser_hub.host_eof_wait.v1';pid=$child.Id;birth=$birth;actualExit=$child.ExitCode;exitKnown=$true;reaped=$true;actualOsExitWaitReturned=$true;stdoutEof=$true;stderrEof=$true;raw=$raw}
-  $retirementPath=Join-Path $dir 'HOST_RETIREMENT.json';WriteReceipt $retirementPath @{pid=$child.Id;birth=$birth;actualExit=$child.ExitCode;reaped=$true;stdoutEof=$true;stderrEof=$true;capturesRetired=$true;heldInputsVerified=$true;offlineNoCaptures=$true}
+  $scope=@{proposalSha256=(Pin $actionPath).sha256;supervisorPid=$PID;supervisorBirth=(Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks.ToString();pid=$child.Id;birth=$birth}
+  $eofPath=Join-Path $dir 'HOST_EOF_WAIT.json';WriteReceipt $eofPath ($scope+@{schema='questms.browser_hub.host_eof_wait.v1';actualExit=$child.ExitCode;exitKnown=$true;reaped=$true;actualOsExitWaitReturned=$true;stdoutEof=$true;stderrEof=$true;raw=$raw})
+  $retirementPath=Join-Path $dir 'HOST_RETIREMENT.json';WriteReceipt $retirementPath ($scope+@{actualExit=$child.ExitCode;reaped=$true;stdoutEof=$true;stderrEof=$true;capturesRetired=$true;heldInputsVerified=$true;offlineNoCaptures=$true;ownFreshLeases=$leases;heldPins=@((Pin (Join-Path $PSScriptRoot 'Start-BrowserHubStandingSupervisor.ps1')))})
   foreach($lease in $leases){& $pwsh -NoProfile -File $Board release $lease.id --result done|Out-Null;if($LASTEXITCODE-ne0){throw 'Regression release failed'}}
-  $releasedPath=Join-Path $dir 'PORTS_RELEASED.json';WriteReceipt $releasedPath @{ownFreshLeases=$leases};$leases=@()
-  $disposition=@{schema='questms.browser_hub.normal_retirement.v1';historicalOutcomesPreserved=$true;hostEof=(Pin $eofPath);hostRetirement=(Pin $retirementPath);portsReleased=(Pin $releasedPath);sourcePins=@((Pin (Join-Path $PSScriptRoot 'Start-BrowserHubStandingSupervisor.ps1')))}
-  Assert-BrowserHubPredecessor $disposition $selection $Port ${function:ReadPinned} ${function:HoldPinned}
-  $bad=$disposition.Clone();$bad.historicalOutcomesPreserved=$false;$denied=$false;try{Assert-BrowserHubPredecessor $bad $selection $Port ${function:ReadPinned} ${function:HoldPinned}}catch{$denied=$true};if(!$denied){throw 'Historical outcome rewriting admitted'}
-  WriteReceipt (Join-Path $dir 'NEXT_PREDECESSOR.json') $disposition
-  $runs+=@{pid=$child.Id;birth=$birth;actualExit=$child.ExitCode;bothEOF=$true;reaped=$true;normalPredecessorAccepted=$true;cliHttpParity=$true;stopResponsePending=$true;raw=$raw};$child.Dispose();$child=$null;$cli.Dispose()
+  $releasedPath=Join-Path $dir 'PORTS_RELEASED.json';WriteReceipt $releasedPath ($scope+@{ownFreshLeases=$leases});$leases=@()
+  $runs+=@{pid=$child.Id;birth=$birth;actualExit=$child.ExitCode;bothEOF=$true;reaped=$true;cliHttpParity=$true;stopResponsePending=$true;raw=$raw};$child.Dispose();$child=$null;$cli.Dispose()
  }
  WriteReceipt (Join-Path $Output 'QUALIFICATION.json') @{schema='questms.browser_hub.host_turnover_test.v1';runs=$runs;deviceCalls=0;realProductionHost=$true;productionRawCompletion=$true;exclusiveReopen=$true;freshSecondHost=$true;offlineNoCaptureQualification=$true}
- Write-Output 'PASS two actual production hosts: HTTP stop/native0/both EOF/reap/exclusive reopen, released-port successor admission, actual CLI/HTTP parity; no device calls'
+ Write-Output 'PASS two actual production hosts: HTTP stop/native0/both EOF/reap/exclusive reopen, fresh host and actual CLI/HTTP parity; no device calls'
 } finally {
  if((Get-Variable child -ErrorAction SilentlyContinue)-and$child-and!$child.HasExited){
   if($url){$null=Invoke-RestMethod -Method Post -Uri ($url+'/operator-stop?token='+$token) -Headers @{Origin=$url};$child.WaitForExit();$null=CompleteOwnedRaw $out $err $stdout $stderr $outPath $errPath}

@@ -39,7 +39,12 @@ try {
  $proposal=Json @{path=$ProposalPath;sha256=$ExpectedProposalSha};if($proposal.schema-cne'questms.browser_hub.standing.v1'-or$proposal.approved-ne$true){throw 'Root-selected standing scope required'}
  Hold $proposal.self;if($proposal.self.path-cne$PSCommandPath){throw 'Selected supervisor source differs'}
  $config=Json $proposal.selection;foreach($pin in @($proposal.sourcePins)+@($proposal.artifactPins)+@($proposal.watchPins)){Hold $pin}
+ if(!(@($proposal.artifactPins)|Where-Object {[IO.Path]::GetFullPath($_.path)-ceq[IO.Path]::GetFullPath($proposal.executable)})){throw 'Selected executable must be a held artifact'}
  if($config.CaptureLifetime-cne'until-operator-stop'-or$null-ne$config.DeadlineUtc-or$proposal.portLeases.Count-ne3){throw 'Explicit until-stop / three-port scope required'}
+ if(@($config.Sources).Count-ne2){throw 'Standing pair requires two selected sources'}
+ $expectedPorts=@($proposal.port)+@($config.Sources.ForwardPort)
+ if(@($expectedPorts|Select-Object -Unique).Count-ne3-or@($proposal.portLeases.id|Select-Object -Unique).Count-ne3){throw 'Distinct standing ports and leases required'}
+ foreach($number in $expectedPorts){if(@($proposal.portLeases|Where-Object {$_.resource-ceq('port:'+$number)}).Count-ne1){throw 'Exact selected listener/forward port leases required'}}
  $disposition=Json $proposal.previousDisposition
  if($disposition.schema -in @('questms.browser_hub.postboot_disposition.v1','questms.browser_hub.normal_retirement.v1')) {
   if(!(@($proposal.sourcePins)|Where-Object {$_.path-ceq(Join-Path $PSScriptRoot 'BrowserHubPredecessor.ps1')})){throw 'Predecessor admission source must be pinned'}
@@ -75,10 +80,10 @@ try {
  New 'HOST_LAUNCH.json' @{pid=$child.Id;birth=$child.StartTime.ToUniversalTime().Ticks.ToString();supervisorPid=$PID;supervisorBirth=$birth;arguments=@($start.ArgumentList);previousSupervisorRetired=$false;previousLeasesReleased=$false;noAppRestart=$true;noWakeChanges=$true;utc=[DateTimeOffset]::UtcNow.ToString('o')}
  $next=[DateTimeOffset]::UtcNow.AddMinutes(10);while(!$child.WaitForExit(1000)){if([DateTimeOffset]::UtcNow-ge$next){Pulse;$next=[DateTimeOffset]::UtcNow.AddMinutes(10)}}
  $raw=CompleteOwnedRaw $out $err $stdout $stderr (Join-Path $proposal.outputDirectory 'HOST.stdout') (Join-Path $proposal.outputDirectory 'HOST.stderr')
- New 'HOST_EOF_WAIT.json' @{schema='questms.browser_hub.host_eof_wait.v1';pid=$child.Id;birth=$childBirth;actualExit=$child.ExitCode;exitKnown=$true;reaped=$true;actualOsExitWaitReturned=$true;stdoutEof=$true;stderrEof=$true;stdoutBytes=$raw.stdoutBytes;stderrBytes=$raw.stderrBytes;stdoutSha256=$raw.stdoutSha256;stderrSha256=$raw.stderrSha256;capturesRetired=$false;leasesReleased=$false;utc=[DateTimeOffset]::UtcNow.ToString('o')}
+ New 'HOST_EOF_WAIT.json' @{schema='questms.browser_hub.host_eof_wait.v1';proposalSha256=$ExpectedProposalSha;supervisorPid=$PID;supervisorBirth=$birth;pid=$child.Id;birth=$childBirth;actualExit=$child.ExitCode;exitKnown=$true;reaped=$true;actualOsExitWaitReturned=$true;stdoutEof=$true;stderrEof=$true;stdoutBytes=$raw.stdoutBytes;stderrBytes=$raw.stderrBytes;stdoutSha256=$raw.stdoutSha256;stderrSha256=$raw.stderrSha256;capturesRetired=$false;leasesReleased=$false;utc=[DateTimeOffset]::UtcNow.ToString('o')}
  if(!(CapturesRetired)){Held 'Actual new capture retirement/cleanup remains unresolved; HOST_EOF_WAIT preserves genuine host termination'}
  foreach($pin in $pins){if((Get-FileHash -LiteralPath $pin.path).Hash.ToLowerInvariant()-cne$pin.sha256){Held 'Held source/input changed'}}
- New 'HOST_RETIREMENT.json' @{pid=$child.Id;birth=$childBirth;actualExit=$child.ExitCode;reaped=$true;stdoutEof=$true;stderrEof=$true;capturesRetired=$true;heldInputsVerified=$true;historicalSupervisorRetired=$false;historicalLeasesReleased=$false}
+ New 'HOST_RETIREMENT.json' @{proposalSha256=$ExpectedProposalSha;supervisorPid=$PID;supervisorBirth=$birth;pid=$child.Id;birth=$childBirth;actualExit=$child.ExitCode;reaped=$true;stdoutEof=$true;stderrEof=$true;capturesRetired=$true;heldInputsVerified=$true;heldPins=@($pins);ownFreshLeases=$proposal.portLeases;historicalSupervisorRetired=$false;historicalLeasesReleased=$false}
  foreach($lease in $proposal.portLeases){& $config.PowerShell -NoProfile -File $config.Board release $lease.id --result done|Out-Null;if($LASTEXITCODE-ne0){Held 'Own fresh lease release unresolved'}}
- New 'PORTS_RELEASED.json' @{ownFreshLeases=$proposal.portLeases;historicalLeasesReleased=$false};$retired=$true
+ New 'PORTS_RELEASED.json' @{proposalSha256=$ExpectedProposalSha;supervisorPid=$PID;supervisorBirth=$birth;pid=$child.Id;birth=$childBirth;ownFreshLeases=$proposal.portLeases;historicalLeasesReleased=$false};$retired=$true
 }catch{if($child){Held ('Standing owner retained: '+$_.Exception.Message)};throw}finally{if($child-and!$retired){Held 'Same new host/capture source and port ownership retained'};if(Get-Variable stdout -ErrorAction SilentlyContinue){$stdout.Dispose()};if(Get-Variable stderr -ErrorAction SilentlyContinue){$stderr.Dispose()};foreach($f in $held){$f.Dispose()}}

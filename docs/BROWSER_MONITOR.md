@@ -224,6 +224,12 @@ requires `historicalOutcomesPreserved: true`, pinned `hostEof`, `hostRetirement`
 `portsReleased` and nonempty `sourcePins`. Its receipts must join actual host
 PID/birth/exit, OS wait, both EOF, capture retirement and held-input checks.
 All three prior lease IDs must be absent from the live active Board inventory.
+EOF, retirement and release receipts must also join the exact proposal SHA,
+supervisor PID/birth and host PID/birth. Released lease IDs/resources join the
+retirement's held lease inventory; selected source pins join its held-input
+inventory. Both prior host and supervisor exact processes must be absent.
+The standing proposal must hold its executable as an artifact and select
+exactly the listener and two forward-port leases.
 
 `questms.browser_hub.postboot_disposition.v1` requires
 `historicalOutcomesPreserved: true`, `originalExitCertified: false`,
@@ -239,10 +245,18 @@ capture. A root-selected disposition is an input, never an inferred certificate.
 `Test-BrowserHubTurnover.ps1` reserves three test ports and launches two actual
 offline production hosts in succession. It exercises the production stop
 endpoint, actual exit/EOF/reaping, disposed raw writers, exclusive reopen,
-live released-lease admission and actual CLI/HTTP preparation parity. These
+actual CLI/HTTP preparation parity. These
 controls qualify host turnover only; they contain no headset capture or app
 pair effects. Full prepare/connect/configure/physical-stop/next-session browser
 operation still requires the selected app owner's authentic lifecycle backend.
+
+`Test-BrowserHubStandingTurnover.ps1` executes two complete production standing
+supervisors and consumes their actual emitted receipts for successor admission.
+It intentionally supplies an invalid daemon identity so the real browser child
+rejects before any platform command. Actual nonzero child exit, both pipe EOF,
+supervisor exit, owned lease release, successor launch and mixed-scope/lease/
+source denials are qualified. This is failed/unstarted host turnover, with no
+physical capture or headset effect qualification.
 
 ### Status qualification and command selection
 
