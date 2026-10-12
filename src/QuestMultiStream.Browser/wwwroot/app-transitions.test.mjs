@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 test('actual app callbacks recover status and preserve terminal errors/stop generation', async()=>{
-  const nodes=new Map(),intervals=[],requests=[];let clock=1000,liveDecoder,liveSocket;
+  const nodes=new Map(),intervals=[],requests=[],listeners=new Map();let clock=1000,liveDecoder,liveSocket;
   const context={drawImage(){},clearRect(){},putImageData(){}};
   const element=id=>{if(!nodes.has(id))nodes.set(id,{value:id==='source'?'q':id==='view'?'full':'',textContent:'',options:[{}],files:[],hidden:false,append(o){this.options.push(o);},getContext(){return context;},pause(){},removeAttribute(){}});return nodes.get(id);};
-  globalThis.document={hidden:false,getElementById:element,createElement:()=>({getContext:()=>context}),addEventListener(){}};
+  globalThis.document={hidden:false,getElementById:element,createElement:()=>({getContext:()=>context}),addEventListener(name,callback){listeners.set(name,callback);}};
   globalThis.location={hash:'#token=fixture',pathname:'/',host:'127.0.0.1:43118'};
   globalThis.sessionStorage={getItem(){return null;},setItem(){}};globalThis.history={replaceState(){}};
   globalThis.performance={now:()=>clock};globalThis.setInterval=f=>intervals.push(f);
@@ -24,9 +24,23 @@ test('actual app callbacks recover status and preserve terminal errors/stop gene
   await frame(true,3);assert.match(element('status').textContent,/H\.264 · Live host/);
   clock+=5000;intervals[0]();assert.match(element('status').textContent,/No new decoded frame/);
   await frame(false,4);assert.match(element('status').textContent,/H\.264 · Live host/);
+  const sameSocket=liveSocket;document.hidden=true;listeners.get('visibilitychange')();
+  await frame(false,5);document.hidden=false;listeners.get('visibilitychange')();
+  assert.match(element('empty').textContent,/Capture connected · waiting/);
+  await frame(false,6);assert.match(element('metrics').textContent,/keyframe-required/);
+  assert.match(element('metrics').textContent,/received video packets/);
+  clock+=2000;intervals[1]();assert.match(element('metrics').textContent,/packet age 2\.0 s/);
+  await frame(true,4);assert.match(element('metrics').textContent,/nonadvancing-packet-timestamp/);
+  await frame(true,7);assert.equal(liveSocket,sameSocket);assert.equal(element('empty').hidden,true);
+  assert.match(element('status').textContent,/H\.264 · Live host/);
+  await liveSocket.onmessage({data:body(true,false,0,[0,0,0,1,0x67,0x64,0,0x1f])});
+  await frame(false,0);assert.equal(element('empty').hidden,false);
+  await frame(true,1);assert.equal(element('empty').hidden,true,'explicit new config admits its new keyframe epoch');
+  assert.equal(liveSocket,sameSocket);
   liveDecoder.options.error(new Error('fixture failure'));const error=element('status').textContent;
   liveDecoder.options.output({displayWidth:1344,displayHeight:704,close(){}});assert.equal(element('status').textContent,error);
   element('stop').onclick();liveDecoder.options.output({displayWidth:1344,displayHeight:704,close(){}});assert.equal(element('status').textContent,'Disconnected');
+  assert.match(element('empty').textContent,/Choose a configured stream/);
   await element('stopHost').onclick();assert.match(element('status').textContent,/requested · actual capture cleanup pending/);
   assert.equal(requests.filter(r=>r.options?.method==='POST').length,1);
 });

@@ -1,5 +1,25 @@
 # Browser monitor prototype
 
+Visibility recovery clears the decoded image and waits for a current keyframe
+on the same capture. An active blank view now identifies that recovery state,
+rather than suggesting that no source is selected. Bounded client counters show
+received video packets/keyframes, their arrival ages and the actual drop reason.
+These distinguish no received packet, hidden decoding, keyframe wait and rejected
+nonadvancing timestamps; they do not prove a network or headset cause.
+
+Explicit codec-configuration packets establish a new decoder timestamp epoch.
+Visibility changes alone retain timestamp guards. Within each configuration,
+nonadvancing packets still drop, deltas cannot establish a fresh decoder, and
+only a real decoded current frame restores the live label. There is no automatic
+native capture restart, retry, control write or IDR request.
+
+The pinned server profile has control=false, so no current same-capture control
+route can request an IDR. When recovery remains unresolved, an operator may
+select Disconnect, require actual native EOF/reaping and forward/jar cleanup,
+then separately select Connect once. A stale document or absent host PID does
+not substitute for that retirement evidence. Original source05/capture evidence
+stays unchanged; packet counters cannot retrospectively identify its failure.
+
 Run `dotnet run --project src/QuestMultiStream.Browser` and open the printed localhost URL. Without a selection, the host performs no ADB operations. A local video file tests source/crop controls; explicit window sharing is a manual fallback. The viewer needs a WebCodecs-capable browser, no client installation. The PC host needs .NET 10, ADB and the matching scrcpy 3.3.4 server.
 
 The direct route reads H.264 scrcpy packets into WebCodecs over a localhost WebSocket. It reuses the Core display/crop launch profile and the app's eye crop/black fallback constants. The stereo blend is unaligned; it does not reproduce the desktop alignment estimator. Crops in the viewer change only drawing. No audio or input control socket is created.
