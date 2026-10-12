@@ -209,6 +209,41 @@ The authenticated, same-origin **Stop monitor** button requests cancellation of 
 
 Decoded progress restores the current H.264 label after stale-age or keyframe waiting, only for an open current live transport without an error. Late output cannot overwrite terminal error/closure truth. Registered controls invoke the actual browser callbacks using synthetic packets, and real child argv/production date-denial paths under German locale; these are source/host controls, not device or visual blend qualification.
 
+### Host turnover and typed action CLI
+
+`--hub-action <absolute JSON>` runs one bounded `HubAction` through the same
+`HubActionHandler` as `/api/hub/actions`, then emits its readback and exits.
+It accepts only optional `--hub-evidence`, `--hub-owner` and `--hub-bridge`
+selections. It creates no monitor listener or capture. The selected owner keeps
+durable request identity across CLI processes; a lost reply remains uncertain.
+
+The standing supervisor also admits two explicit predecessor dispositions via
+the pinned `tools/BrowserHubPredecessor.ps1` source. Existing retained-supervisor
+v1 admission remains available. `questms.browser_hub.normal_retirement.v1`
+requires `historicalOutcomesPreserved: true`, pinned `hostEof`, `hostRetirement`,
+`portsReleased` and nonempty `sourcePins`. Its receipts must join actual host
+PID/birth/exit, OS wait, both EOF, capture retirement and held-input checks.
+All three prior lease IDs must be absent from the live active Board inventory.
+
+`questms.browser_hub.postboot_disposition.v1` requires
+`historicalOutcomesPreserved: true`, `originalExitCertified: false`,
+`originalCleanupCertified: false`, exact `currentHostBootUtc`, earlier
+`previousHostObservationUtc`, nonempty `processes` (`pid`, string `birthTicks`),
+`previousPorts`, `sourcePins`, and `headsetBootChanges` (`canonical`,
+`previousBoot`, `currentBoot`). Live host reboot, prior exact process absence,
+unoccupied prior ports and each selected headset's changed boot must match.
+This establishes a new host scope; original process exit and remote cleanup
+stay unknown. Current headset/daemon/lease/source guards still run before
+capture. A root-selected disposition is an input, never an inferred certificate.
+
+`Test-BrowserHubTurnover.ps1` reserves three test ports and launches two actual
+offline production hosts in succession. It exercises the production stop
+endpoint, actual exit/EOF/reaping, disposed raw writers, exclusive reopen,
+live released-lease admission and actual CLI/HTTP preparation parity. These
+controls qualify host turnover only; they contain no headset capture or app
+pair effects. Full prepare/connect/configure/physical-stop/next-session browser
+operation still requires the selected app owner's authentic lifecycle backend.
+
 ### Status qualification and command selection
 
 Successful selected projection reads derive typed `SourceOwnerValidated`

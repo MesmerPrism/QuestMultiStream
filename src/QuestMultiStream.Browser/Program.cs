@@ -8,6 +8,22 @@ using System.Text.Json;
 using QuestMultiStream.Browser;
 
 if (args.Contains("--self-test")) { await SelfTests.Run(); return; }
+if(args.Contains("--hub-action")) {
+    if(args.Length%2!=0 || args.Where((_,i)=>i%2==0).Any(a=>a is not "--hub-action" and not "--hub-evidence" and not "--hub-owner" and not "--hub-bridge") || args.Where((_,i)=>i%2==0).Distinct().Count()!=args.Length/2)
+        throw new InvalidDataException("Typed action CLI accepts only explicit action and owner selections");
+    string? CliOption(string key) {var i=Array.IndexOf(args,key);return i<0?null:args[i+1];}
+    if(CliOption("--hub-evidence") is not null && CliOption("--hub-owner") is not null)throw new InvalidDataException("Choose recorded evidence or selected owner projection");
+    var path=CliOption("--hub-action")!;
+    if(!Path.IsPathFullyQualified(path))throw new InvalidDataException("Selected absolute action file required");
+    using var input=File.Open(path,FileMode.Open,FileAccess.Read,FileShare.Read);
+    if(input.Length>4096)throw new InvalidDataException("Bounded action file required");
+    var request=JsonSerializer.Deserialize<HubAction>(input,HubControl.Json)??throw new InvalidDataException("Missing action");
+    using var cliProjection=CliOption("--hub-owner") is {} cp?new HubProjectionSource(cp):null;
+    using var cliBridge=CliOption("--hub-bridge") is {} cb?new HubOwnerBridge(cb):null;
+    var handler=new HubActionHandler(new HubControl(CliOption("--hub-evidence"),cliProjection),cliBridge);
+    Console.WriteLine(JsonSerializer.Serialize(await handler.Handle(request),HubControl.Json));
+    return;
+}
 using var operatorStop = new CancellationTokenSource();
 var builder = WebApplication.CreateBuilder(args);
 // Routine request/static-file information includes query authentication tokens
@@ -40,6 +56,7 @@ if(Option("--hub-evidence") is not null && Option("--hub-owner") is not null)thr
 using var projection = Option("--hub-owner") is {} projectionPath?new HubProjectionSource(projectionPath):null;
 var hub = new HubControl(Option("--hub-evidence"),projection);
 using var hubBridge = Option("--hub-bridge") is { } bridgePath ? new HubOwnerBridge(bridgePath) : null;
+var hubActions = new HubActionHandler(hub,hubBridge);
 if (fixture is not null && (selection is not null || !Path.IsPathFullyQualified(fixture) || !File.Exists(fixture))) throw new InvalidOperationException("Fixture requires offline mode and an existing selected absolute file");
 var busy = new HashSet<string>(); var sync = new object();
 var fanouts = new Dictionary<string,CaptureFanout>();
@@ -123,9 +140,9 @@ app.MapPost("/api/hub/actions", async (HttpContext c) => {
         var request = await JsonSerializer.DeserializeAsync<HubAction>(c.Request.Body, HubControl.Json);
         if (request?.Execute == true) {
             if (hubBridge is null) return Results.Json(new { error = "App-owner executor unavailable; device effects denied" }, statusCode:503);
-            return Results.Json(await hubBridge.Execute(request));
+            return Results.Json(await hubActions.Handle(request));
         }
-        var result = hub.Prepare(request ?? throw new InvalidDataException("Missing action"));
+        var result = await hubActions.Handle(request ?? throw new InvalidDataException("Missing action"));
         return Results.Json(result);
     } catch (Exception e) when (e is JsonException or InvalidDataException) { return Results.BadRequest(new { error = e.Message }); }
       catch (Exception e) when (e is IOException or HttpRequestException or TaskCanceledException) { return Results.Json(new { error = "Owner outcome unresolved; do not retry with a new request ID", detail = e.GetType().Name }, statusCode:502); }

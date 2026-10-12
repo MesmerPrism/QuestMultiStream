@@ -35,12 +35,19 @@ function CapturesRetired {
  return $true
 }
 
+# Pure admission checks are shared with real-process regression controls.
+. (Join-Path $PSScriptRoot 'BrowserHubPredecessor.ps1')
+
 try {
  $proposal=Json @{path=$ProposalPath;sha256=$ExpectedProposalSha};if($proposal.schema-cne'questms.browser_hub.standing.v1'-or$proposal.approved-ne$true){throw 'Root-selected standing scope required'}
  Hold $proposal.self;if($proposal.self.path-cne$PSCommandPath){throw 'Selected supervisor source differs'}
  $config=Json $proposal.selection;foreach($pin in @($proposal.sourcePins)+@($proposal.artifactPins)+@($proposal.watchPins)){Hold $pin}
  if($config.CaptureLifetime-cne'until-operator-stop'-or$null-ne$config.DeadlineUtc-or$proposal.portLeases.Count-ne3){throw 'Explicit until-stop / three-port scope required'}
  $disposition=Json $proposal.previousDisposition
+ if($disposition.schema -in @('questms.browser_hub.postboot_disposition.v1','questms.browser_hub.normal_retirement.v1')) {
+  if(!(@($proposal.sourcePins)|Where-Object {$_.path-ceq(Join-Path $PSScriptRoot 'BrowserHubPredecessor.ps1')})){throw 'Predecessor admission source must be pinned'}
+  Assert-BrowserHubPredecessor $disposition $config $proposal.port ${function:Json} ${function:Hold}
+ } else {
  if($disposition.schema-cne'questms.browser_hub.retained_supervisor_disposition.v1'-or!$disposition.hostOsExitActuallyWaited-or$disposition.supervisorRetired-ne$false-or$disposition.oldSourceHandlesReleased-ne$false-or$disposition.oldLeasesReleased-ne$false-or!$disposition.historicalFailurePreserved-or!$disposition.noAppRestart-or!$disposition.noWakeChanges){throw 'Previous quiescent retained scope disposition unavailable'}
  $witness=Json $disposition.hostPipeEofOrderedWitness;Hold $disposition.oldSupervisorSource
  if($witness.host_pid-ne$disposition.hostPid-or$witness.supervisor_pid-ne$disposition.supervisorPid-or$witness.reason-cne'New capture EOF/cleanup missing after host exit; no automatic process kill/replay'){throw 'Original ordered host EOF witness differs'}
@@ -53,6 +60,8 @@ try {
  }
  foreach($source in $config.Sources){if($source.ForwardPort-in@(43119,43120)){throw 'Retained original forward ports cannot be reused'}}
  if($proposal.port-in@(43118,43119,43120)-or$proposal.portLeases.resource-notcontains('port:'+$proposal.port)){throw 'Distinct selected listener port required'}
+ }
+ if($proposal.portLeases.resource-notcontains('port:'+$proposal.port)){throw 'Selected listener lease required'}
  Guard
  if(Get-NetTCPConnection -LocalPort (@($proposal.port)+@($config.Sources.ForwardPort)) -State Listen -ErrorAction SilentlyContinue){throw 'Selected new ports are occupied'}
  foreach($pin in @(@{path=$config.Adb;sha256=$config.AdbSha256},@{path=$config.Server;sha256=$config.ServerSha256},@{path=$config.Board;sha256=$config.BoardSha256},@{path=$config.PowerShell;sha256=$config.PowerShellSha256})){Hold $pin}
