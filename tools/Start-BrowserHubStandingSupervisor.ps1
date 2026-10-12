@@ -35,9 +35,6 @@ function CapturesRetired {
  return $true
 }
 
-# Pure admission checks are shared with real-process regression controls.
-. (Join-Path $PSScriptRoot 'BrowserHubPredecessor.ps1')
-
 try {
  $proposal=Json @{path=$ProposalPath;sha256=$ExpectedProposalSha};if($proposal.schema-cne'questms.browser_hub.standing.v1'-or$proposal.approved-ne$true){throw 'Root-selected standing scope required'}
  Hold $proposal.self;if($proposal.self.path-cne$PSCommandPath){throw 'Selected supervisor source differs'}
@@ -46,6 +43,8 @@ try {
  $disposition=Json $proposal.previousDisposition
  if($disposition.schema -in @('questms.browser_hub.postboot_disposition.v1','questms.browser_hub.normal_retirement.v1')) {
   if(!(@($proposal.sourcePins)|Where-Object {$_.path-ceq(Join-Path $PSScriptRoot 'BrowserHubPredecessor.ps1')})){throw 'Predecessor admission source must be pinned'}
+  # Definitions load only after the exact helper bytes have been held/verified.
+  . (Join-Path $PSScriptRoot 'BrowserHubPredecessor.ps1')
   Assert-BrowserHubPredecessor $disposition $config $proposal.port ${function:Json} ${function:Hold}
  } else {
  if($disposition.schema-cne'questms.browser_hub.retained_supervisor_disposition.v1'-or!$disposition.hostOsExitActuallyWaited-or$disposition.supervisorRetired-ne$false-or$disposition.oldSourceHandlesReleased-ne$false-or$disposition.oldLeasesReleased-ne$false-or!$disposition.historicalFailurePreserved-or!$disposition.noAppRestart-or!$disposition.noWakeChanges){throw 'Previous quiescent retained scope disposition unavailable'}
