@@ -9,6 +9,10 @@ internal static class SelfTests
 {
     public static async Task Run()
     {
+        HubControl.SelfTest();
+        HubProjectionSource.SelfTest();
+        await HubOwnerBridge.SelfTest();
+        await CaptureFanout.SelfTest();
         var bytes = new byte[65+12+12+4];
         BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(65), 0x68323634);
         BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(69), 1344);
@@ -116,6 +120,16 @@ internal static class SelfTests
         try{await ScrcpyStartup.Connect(port,()=>true,deadline.Token,_=>{});throw new Exception("Exited child admitted");}catch(IOException){}
         using var expired=new CancellationTokenSource();expired.Cancel();
         try{await ScrcpyStartup.Connect(port,()=>false,expired.Token,_=>{});throw new Exception("Expired startup admitted");}catch(OperationCanceledException){}
+        // Advance an observer-only estimated boundary without wall-clock waiting.
+        // Actual until-stop scope still owns this delayed native readiness wait.
+        var delayedListener=new TcpListener(IPAddress.Loopback,0);delayedListener.Start();
+        using var actualStop=new CancellationTokenSource();using var actualScope=MonitorLifetime.CaptureCancellation(null,actualStop.Token);
+        using var observerEstimate=new CancellationTokenSource();
+        var delayed=ScrcpyStartup.Connect(((IPEndPoint)delayedListener.LocalEndpoint).Port,()=>false,actualScope.Token,_=>{});
+        using var delayedPeer=await delayedListener.AcceptTcpClientAsync(deadline.Token);
+        observerEstimate.Cancel();await Task.Yield();
+        if(delayed.IsCompleted||actualScope.IsCancellationRequested)throw new Exception("Observer estimate retired a healthy waiting producer");
+        await delayedPeer.GetStream().WriteAsync(new byte[]{0},actualScope.Token);using var delayedClient=await delayed;delayedListener.Stop();
         Console.WriteLine("PASS actual loopback delayed-listener readiness, exited-child and deadline denial; no server launch or device calls");
     }
     static async Task Denied(byte[] data,bool header)

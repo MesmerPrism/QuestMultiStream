@@ -2,6 +2,9 @@ import {eyeRects,cropRect,blendPixel,packet,avcCodec} from './view.mjs';
 import {decodedStatus} from './frame-status.mjs';
 import {DecoderPolicy} from './decoder-policy.mjs';
 const $=id=>document.getElementById(id),canvas=$('screen'),ctx=canvas.getContext('2d'),scratch=document.createElement('canvas'),sctx=scratch.getContext('2d'),video=$('local');
+const pane=new URLSearchParams(location.search).get('pane');
+const viewerSource=new URLSearchParams(location.search).get('source');
+if(pane!==null)document.body.classList.add('embedded');
 const token=new URLSearchParams(location.hash.slice(1)).get('token')??sessionStorage.getItem('questms-local-token')??'';
 if(token)sessionStorage.setItem('questms-local-token',token);history.replaceState(null,'',location.pathname);
 let socket=null,decoder=null,shared=null,blob=null,generation=0,frames=0,frameTime=0,mode='',streamError='',config=null,waitingKey=true,policy=null,decoderEpoch=0,packetTime=0,keyTime=0;
@@ -27,17 +30,19 @@ function draw(image,w,h){
       const i=(y*a.w+x)*4,p=blendPixel(left.data.subarray(i,i+4),right.data.subarray(i,i+4),x/Math.max(1,a.w-1));left.data.set(p,i);
     }ctx.putImageData(left,0,0);
   }
-  const resumed=decodedStatus(mode,streamError,socket?.readyState===WebSocket.OPEN,w,h);if(resumed)status(resumed);
+  const resumed=decodedStatus(mode,streamError,socket?.readyState===WebSocket.OPEN,w,h);if(resumed)status(resumed);else if(mode==='Mirror observer'&&!streamError&&socket?.readyState===WebSocket.OPEN)status('Headset mirror · decoded frames');
   $('empty').hidden=true;frames++;frameTime=performance.now();$('metrics').textContent=`${w} × ${h} source · ${frames} decoded frames · ${mode}`;
 }
 function stop(){generation++;socket?.close();socket=null;if(decoder&&decoder.state!=='closed')decoder.close();decoder=null;shared?.getTracks().forEach(t=>t.stop());shared=null;video.pause();video.srcObject=null;video.removeAttribute('src');if(blob)URL.revokeObjectURL(blob);blob=null;mode='';streamError='';config=null;waitingKey=true;frames=0;frameTime=0;packetTime=0;keyTime=0;policy=null;$('metrics').textContent='No decoded frames';ctx.clearRect(0,0,canvas.width,canvas.height);$('empty').hidden=false;$('empty').textContent='Choose a configured stream or open a local video.';status('Disconnected');}
 $('stop').onclick=stop;
+$('stopCapture').onclick=async()=>{const id=$('source').value;if(!id)return;try{const response=await fetch(`/api/captures/${encodeURIComponent(id)}/stop?token=${encodeURIComponent(token)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:crypto.randomUUID()})});if(!response.ok)throw new Error('Capture stop denied: '+response.status);status('Capture stop requested · cleanup pending');}catch(error){status(error.message);}};
 $('stopHost').onclick=async()=>{try{const r=await fetch('/operator-stop?token='+encodeURIComponent(token),{method:'POST'});if(!r.ok)throw new Error('Monitor stop denied: '+r.status);status('Monitor stop requested · actual capture cleanup pending');}catch(e){status(e.message);}};
 $('connect').onclick=async()=>{
-  stop();const id=$('source').value;if(!id)return;const current=generation;mode='Live host';
+  stop();const id=$('source').value;if(!id)return;const current=generation;mode=pane===null?'Live host':'Mirror observer';
   if(!window.VideoDecoder){status('WebCodecs requires a supported browser and secure context');return;}
   policy=new DecoderPolicy();
-  socket=new WebSocket(`ws://${location.host}/stream/${encodeURIComponent(id)}?token=${encodeURIComponent(token)}`);socket.binaryType='arraybuffer';
+  const started=await fetch(`/api/captures/${encodeURIComponent(id)}/start?token=${encodeURIComponent(token)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:crypto.randomUUID()})});if(!started.ok){status('Capture request denied: '+started.status);return;}const state=await started.json();if(current!==generation)return;if(state.state==='stopping'){status('Capture is retiring; wait for its actual cleanup');return;}
+  socket=new WebSocket(`ws://${location.host}/observe/${encodeURIComponent(id)}?token=${encodeURIComponent(token)}`);socket.binaryType='arraybuffer';
   socket.onopen=()=>status('Capture requested · waiting for video');
   socket.onmessage=async event=>{
     if(current!==generation)return;
@@ -60,7 +65,7 @@ function localLoop(current){if(current!==generation||video.paused)return;if(vide
 $('file').onchange=async()=>{const file=$('file').files[0];if(!file)return;stop();const current=generation;blob=URL.createObjectURL(file);video.src=blob;video.loop=true;mode='Local file';try{await video.play();if(current===generation){status('Local file · no device connection');localLoop(current);}}catch(e){status(e.message);}};
 $('share').onclick=async()=>{stop();const current=generation;try{const stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});if(current!==generation){stream.getTracks().forEach(t=>t.stop());return;}shared=stream;video.srcObject=stream;mode='Manual window share';stream.getVideoTracks()[0].onended=()=>{if(current===generation)stop();};await video.play();if(current===generation){status('Manual browser-selected window');localLoop(current);}}catch(e){status('Window share: '+e.message);}};
 $('fullscreen').onclick=()=>canvas.requestFullscreen();
-try{const response=await fetch('/api/sources?token='+encodeURIComponent(token));if(response.ok){const sources=await response.json();for(const s of sources){const o=document.createElement('option');o.value=s.id;o.textContent=s.label+' · Display '+s.displayId;$('source').append(o);}if(sources.length){$('source').options[0].textContent='Choose host source';$('hostNote').textContent='Each connection starts one explicitly configured capture. No automatic retry.';}}}catch(e){status('Host unavailable');}
+try{const response=await fetch('/api/sources?token='+encodeURIComponent(token));if(response.ok){const sources=await response.json();const choices=pane===null?sources:sources.filter(s=>s.id===viewerSource);for(const s of choices){const o=document.createElement('option');o.value=s.id;o.textContent=s.label+' · Display '+s.displayId;$('source').append(o);}if(choices.length){$('source').options[0].textContent='Choose host source';if(pane!==null)$('source').value=choices[0].id;$('hostNote').textContent='One mirror per headset. Reconnect does not restart it.';}}else{status('Host authentication denied: '+response.status);}}catch(e){status('Host unavailable');}
 $('connect').disabled=$('source').options.length===1;
 setInterval(()=>{if(mode&&frameTime&&performance.now()-frameTime>3000)status((streamError?streamError+' · ':'')+'No new decoded frame · age '+((performance.now()-frameTime)/1000).toFixed(1)+' s · freshness unknown');},1000);
 

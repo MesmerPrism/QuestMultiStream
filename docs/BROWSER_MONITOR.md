@@ -1,4 +1,166 @@
+# Two-headset browser control hub successor
+
+The hub assigns Q and W by explicit source IDs (`q`/`w` by default; optional
+`?q=<id>&w=<id>`). Screen mirrors and app peer streaming remain independent.
+The main view shows both mirrors, independently aged channel states, controller
+availability and bilateral requests. Raw paths, receipts and IDs are in Diagnostics.
+
+**Start mirror** dispatches one selected native capture through the host.
+**Disconnect viewer** disconnects only that observer; the producer and other
+observers keep running. **Stop mirror** requests cancellation of only the selected
+capture; its state stays stopping until actual child exit, both pipe EOF and
+forward/jar cleanup. **Stop monitor** applies to this host. These actions never
+restart headset apps or alter keepawake. The legacy `/stream` endpoint still ties
+its original viewer to its native capture and supports selected capture cancellation.
+
+Read-only `/observe/<id>` uses transient shared packet references, with at most
+8 observers per source, each with a 4 MiB / 128-packet queue and at most one
+4 MiB in-flight send (8 MiB payload-reference upper bound per observer). Cached
+codec/keyframe GOP is at most 4 MiB and 128 packets; configuration is at most
+256 KiB. Slow observer overflow cancels its delivery scope and aborts only that
+WebSocket. A recent complete GOP bootstraps late observers; otherwise they wait
+for the next real keyframe. No video evidence copies are made.
+
+`--hub-owner` selects a bounded private projection selection. Its exact publisher
+PID/birth, source hashes, HMAC, generation, session and opaque Q/W native actor
+strings are checked. The private owner publisher joins actual completed raw
+stdout/stderr hashes, EOF/reaping and corresponding accepted owner validators,
+then derives frame time from native observation clocks. Publication time is only
+publisher freshness. It never turns a retained receipt into a fresh frame.
+The current native ABI does not expose socket-open proof; recent advancing
+accepted reports say **Frames reported**, with socket state unknown. Expired
+observations remain stale. Departed writers fail closed.
+
+Readiness follows the actual selected capture lifetime and genuine producer
+exit/protocol failures. The successor removes the inherited ten-second startup
+estimate; there is no post-connect startup timer that can retire a healthy waiting
+producer. HTTP request timeouts remain retained uncertain requests, never replay.
+
+The private `MorphovisionBrowserCurrentOwner.py` binds only to an existing live
+selected owner and supports its once-only bilateral stop request marker. It
+launches no native admission worker and claims no physical cleanup. The future
+`MorphovisionBrowserSelectedFactory.py` concretely constructs the authentic
+GuardedAdmissionAdapter / AdmissionMaintenance in a fresh owned selected span;
+its asynchronous ingress releases the HTTP lane while the single native worker
+runs. Original whole-close capsules and official physical-cleanup validator must
+already be source-selected. It cannot attach a second worker to current admission.
+This factory is source integration, not an installed current-owner control grant.
+Its immutable HTTP selection ticket remains separate from the actual native
+session created during pairing. Only the sole authentic owner callback, after
+both signed pair/preflight and official arm validations, may durably anchor that
+native session. Later admission progress still requires the existing Start and
+bilateral renewal validators. Actor/session/source changes deny subsequent
+effects. The browser cannot submit a session transition. Original close uses
+fixed, preselected `BROWSER_CLOSE_ONCE` capsules and their prepared registrations;
+request UUIDs remain once-only journal identities. Establish remains unavailable
+until this fresh selected factory/session transition is adopted.
+
+Adoption requires a new pinned host/capture scope: gracefully stop source06,
+retain its handles/leases until actual native child exit, pipe EOF, forward/jar
+cleanup and host EOF/reaping; unresolved cleanup remains HELD. Start the frozen
+successor on separately selected leased host/forward ports after retirement.
+Do not hot edit source06, reuse its occupied forwards, restart headset apps or
+infer old cleanup from process disappearance. Start Q and W once, attach both
+observers, qualify actual advancing decoded headset frames, and keep app peer
+status acceptance separate. The browser client needs no installation; the PC
+scrcpy bridge still requires .NET, ADB and the selected scrcpy server.
+
+The previous monitor ownership details below apply to the legacy direct route.
+
 # Browser monitor prototype
+
+## Isolated two-headset control hub candidate
+
+The default page now displays two independent existing viewers. The first and
+second explicitly selected sources map to Q and W respectively; verify that
+host selection order before adoption. Each pane has independent decoding,
+crop, Connect once and Disconnect. Loading the hub starts no native capture.
+The original single viewer remains at `/viewer.html`.
+
+`--port <1024..65535>` selects an explicit loopback listener and updates exact
+origin guards. Reserve its port independently. The default remains 43118.
+Never restart or change a retained source/artifact serving an active session.
+
+`--hub-evidence <absolute JSON>` reads bounded `questms.hub.observations.v1`
+observations from one operator-selected file. Device, control, and Q→W/W→Q app
+video age independently. Missing, future, expired or incomplete observations
+remain unknown/invalid/expired/unproven. Active recorded app video requires a
+session handshake, open socket and advancing recent app frame samples. Scrcpy
+images never supply these observations. All file projections are explicitly
+recorded evidence; this adapter does not authenticate owner signatures.
+
+`tools/Project-BrowserOwnerReceipts.py --selection <private JSON> --output
+<new absolute JSON>` projects explicitly named completed native peer_status
+receipts without device calls. Its closed selection has owner, generation,
+session, challenge, apkSha256 and Q/W receipts. It joins receipt identity and
+session, preserves owner observation/authority expiry, and caps currentness to
+five seconds. It displays recorded peer adoption counts, without treating
+them as an open socket or handshake. Raw receipt signatures and qualification
+remain unverified; receipt existence is never acceptance. Native 64-bit
+incarnations are not sent to JavaScript as numeric identities.
+
+The authenticated same-origin `/api/hub/actions` handler accepts only typed
+establish/disconnect, direction, generation, UUID requestId and execute. The
+default prepares reviewable candidates with no effects. Unknown fields, stale
+generation, conflicting replay and absent execution ownership are denied.
+
+`--hub-bridge <absolute private JSON>` selects the closed owner transport:
+endpoint (`http://127.0.0.1:<leased port>/operator`), private bearer token,
+generation and session. The browser receives no bearer token, command text,
+signing key or tool path. Only bilateral execution is supported. Responses
+must join request/generation/session and expose actual readback. A timeout or
+failed request remains retained and must not be replayed with a new UUID.
+Selecting this transport is not a readiness or authority certificate.
+
+`tools/BrowserSelectedOwnerBridge.py` supplies the matching loopback endpoint
+for explicit integration on the selected owner's available command lane. It
+delegates establish to the existing guarded AdmissionMaintenance factory and
+disconnect to the existing owned whole-close handler. The injected owner must
+retain its source/actor/lease span, current session and actual native child
+ownership. The bridge keeps a durable once-only request journal and creates
+no ADB command, background worker, additional renewer or signing authority.
+It denies a lane already owned by admission/maintenance. An unresolved intent
+remains pending; neither timeout nor missing result proves no effects.
+
+This candidate has not been injected into the current active owner. Adoption
+needs reviewed exact source/config pins, a separately available owner lane,
+owned source span, leased listener, genuine executor callbacks and joined
+readbacks. The current host and APK remain unchanged. Existing admission
+namespaces cannot be reused for another Start; the owner selects fresh scope.
+The asynchronous owner ingress returns a durable queued request and keeps
+status/stop accessible while one admission/renewal worker holds native work.
+A disconnect sets only the existing worker's cancellation request. It never
+kills or cancels an in-flight native child. After the actual owned run returns,
+the same worker rechecks source/actor/session/live guards and invokes the
+selected whole-close handler under that worker's native lock, exactly once.
+If admission has already returned, one close worker may own that same lock;
+it performs no Start or renewal. Missing physical barriers remain unknown.
+
+The closed bridge binding contains generation, session, Q/W opaque app/native
+actor identities and exact sourcePins. Owner implementation, factory, close
+handler and actor/session readers must belong to those pinned source files.
+Sources and live owner joins are checked again immediately before effects.
+The admission factory accepts `cancelled` and must construct the existing
+AdmissionMaintenance with that callback and the guarded owner's native lock.
+After existing owner receipt validation, its record callback may publish
+effective admission progress; it never asserts cleanup. Queue/running/
+effective/failed/unknown states remain separate from actual completion.
+Restarted ingress observes retained incomplete intents as unknown and cannot
+replay their effects. The browser polls authenticated request readback through
+`/api/hub/actions/<UUID>` without dispatching another operation.
+
+The browser client needs no installation. This scrcpy route still needs a PC
+bridge with .NET, ADB and the pinned scrcpy server. Removing the PC bridge
+requires a separate authenticated headset-hosted media/control transport;
+ordinary browser APIs cannot launch ADB or directly decode an arbitrary app
+peer socket. LAN reachability alone proves no pairing or media flow.
+
+Validation: `tools/Test-BrowserMonitor.ps1` plus
+`python tools/Test-BrowserSelectedOwnerBridge.py`. Bridge tests model the
+selected owner and verify authentication, identity, busy lane, durable replay
+and uncertain outcomes. A genuinely blocked modeled native Start exercises
+concurrent status and stop ingress, one close dispatch and unresolved physical
+barriers; these tests do not qualify device effects.
 
 Visibility recovery clears the decoded image and waits for a current keyframe
 on the same capture. An active blank view now identifies that recovery state,

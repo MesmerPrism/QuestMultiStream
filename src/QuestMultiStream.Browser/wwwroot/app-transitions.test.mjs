@@ -42,5 +42,6 @@ test('actual app callbacks recover status and preserve terminal errors/stop gene
   element('stop').onclick();liveDecoder.options.output({displayWidth:1344,displayHeight:704,close(){}});assert.equal(element('status').textContent,'Disconnected');
   assert.match(element('empty').textContent,/Choose a configured stream/);
   await element('stopHost').onclick();assert.match(element('status').textContent,/requested · actual capture cleanup pending/);
-  assert.equal(requests.filter(r=>r.options?.method==='POST').length,1);
+  assert.equal(requests.filter(r=>r.options?.method==='POST').length,2);
+  assert.match(requests.find(r=>r.url.includes('/api/captures/')).url,/\/start/);
 });
