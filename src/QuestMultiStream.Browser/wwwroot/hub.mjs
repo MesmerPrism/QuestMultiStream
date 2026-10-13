@@ -5,7 +5,7 @@ const token=new URLSearchParams(location.hash.slice(1)).get('token')??sessionSto
 if(token)sessionStorage.setItem('questms-local-token',token);history.replaceState(null,'',location.pathname);
 let generation=null,inflight=false,observations=[],prepared=null,bridgeSelected=false,sessionReadOnly=false,activeRequest=null,refreshing=false;
 const api=path=>path+'?token='+encodeURIComponent(token);
-try{const response=await fetch(api('/api/hub/capabilities'));if(response.ok){const caps=await response.json();bridgeSelected=caps.bridgeSelected;sessionReadOnly=caps.readOnlySession===true;if(sessionReadOnly){$('actionForm').hidden=true;$('actionResult').textContent='Read-only session mode � pair actions unavailable.';}if(bridgeSelected&&caps.actions)for(const option of [...$('action').options])if(!caps.actions.includes(option.value))option.remove();}}catch{}
+try{const response=await fetch(api('/api/hub/capabilities'));if(response.ok){const caps=await response.json();bridgeSelected=caps.bridgeSelected;sessionReadOnly=caps.readOnlySession===true;if(sessionReadOnly){$('actionForm').hidden=true;$('actionResult').textContent='Read-only session mode: pair actions unavailable.';}if(bridgeSelected&&caps.actions)for(const option of [...$('action').options])if(!caps.actions.includes(option.value))option.remove();}}catch{}
 $('controller').textContent=bridgeSelected?'Controller selected · checking its readiness':'Controller unavailable';
 $('execute').textContent=bridgeSelected?'Prepare request first':'Controller unavailable';
 const labels={'Q.device':'Q headset','Q.control':'Q control connection','W.device':'W headset','W.control':'W control connection','Q→W.peer':'Q → W video','W→Q.peer':'W → Q video'};
