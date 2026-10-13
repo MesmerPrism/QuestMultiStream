@@ -145,18 +145,18 @@ public sealed class DeviceRowViewModel : ObservableObject
 
     public string ProximityStatusText => _proximityMode switch
     {
-        QuestProximityMode.KeepAwake => "Proximity: Keep awake override on",
-        QuestProximityMode.NormalSensor => "Proximity: Normal sensor mode",
+        QuestProximityMode.KeepAwake => "Proximity: Keep-awake override active",
+        QuestProximityMode.NormalSensor => "Proximity: Normal sensor active",
         _ => "Proximity: State unknown"
     };
 
     public string ToggleProximityText => _proximityMode == QuestProximityMode.KeepAwake
-        ? "Keep Awake: On"
-        : "Keep Awake: Off";
+        ? "Disable Keep Awake"
+        : "Enable Keep Awake";
 
     public string ToggleProximityHintText => _proximityMode == QuestProximityMode.KeepAwake
-        ? "Restores the normal forehead sensor."
-        : "Pretends the headset is being worn so the displays stay awake.";
+        ? "Turns keep-awake off and restores the normal forehead sensor."
+        : "Turns keep-awake on and pretends the headset is being worn.";
 
     public bool IsCastWindowPinned => _isCastWindowPinned;
 
@@ -183,7 +183,10 @@ public sealed class DeviceRowViewModel : ObservableObject
     public void SetCaptureTargets(
         IReadOnlyList<ScrcpyCaptureTarget>? captureTargets,
         ScrcpyCaptureTargetKind? preferredKind = null,
-        string? preferredId = null)
+        string? preferredId = null,
+        int? preferredDisplayId = null,
+        string? preferredCameraId = null,
+        ScrcpyPresentationMode preferredPresentationMode = ScrcpyPresentationMode.Raw)
     {
         _suppressCaptureTargetChange = true;
         CaptureTargets.Clear();
@@ -200,6 +203,15 @@ public sealed class DeviceRowViewModel : ObservableObject
         var selected = targets.FirstOrDefault(target =>
                 target.Kind == preferredKind &&
                 string.Equals(target.Id, preferredId, StringComparison.Ordinal))
+            ?? targets.FirstOrDefault(target =>
+                target.Kind == preferredKind &&
+                target.PresentationMode == preferredPresentationMode &&
+                target.LaunchDisplayId == preferredDisplayId &&
+                string.Equals(target.LaunchCameraId, preferredCameraId, StringComparison.Ordinal))
+            ?? targets.FirstOrDefault(target =>
+                target.Kind == preferredKind &&
+                target.LaunchDisplayId == preferredDisplayId &&
+                string.Equals(target.LaunchCameraId, preferredCameraId, StringComparison.Ordinal))
             ?? targets.FirstOrDefault(target =>
                 target.Kind == ScrcpyCaptureTargetKind.Display &&
                 string.Equals(target.Id, "0", StringComparison.Ordinal))

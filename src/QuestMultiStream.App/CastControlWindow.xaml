@@ -108,115 +108,158 @@
                     CornerRadius="2" />
         </Grid>
 
-        <Border x:Name="HeaderChrome"
-                Margin="14,14,14,0"
-                VerticalAlignment="Top"
-                Style="{StaticResource PanelBorderStyle}"
-                Padding="14,12"
-                PreviewMouseLeftButtonDown="OnHeaderMouseLeftButtonDown">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="8" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
+        <Border x:Name="CompositeBackdrop"
+                Margin="2"
+                CornerRadius="12"
+                Background="#FF000000"
+                Visibility="Collapsed"
+                IsHitTestVisible="False" />
 
-                <Grid Grid.Row="0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="12" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="12" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
+        <Grid Margin="14">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="0" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
 
-                    <StackPanel Grid.Column="0"
-                                VerticalAlignment="Center">
-                        <TextBlock Text="{Binding DisplayName}"
-                                   Style="{StaticResource SectionTitleStyle}"
-                                   Margin="0" />
-                        <TextBlock Text="{Binding ProximityStatusText}"
+            <Border x:Name="HeaderChrome"
+                    Grid.Row="0"
+                    Style="{StaticResource PanelBorderStyle}"
+                    Padding="14,12"
+                    PreviewMouseLeftButtonDown="OnHeaderMouseLeftButtonDown">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0"
+                                    VerticalAlignment="Center">
+                            <TextBlock Text="{Binding DisplayName}"
+                                       Style="{StaticResource SectionTitleStyle}"
+                                       Margin="0" />
+                            <TextBlock Text="{Binding ProximityStatusText}"
+                                       Style="{StaticResource MicroCaptionStyle}"
+                                       Margin="0,2,0,0" />
+                        </StackPanel>
+
+                        <TextBlock Grid.Column="2"
+                                   Text="{Binding SessionDetailText}"
                                    Style="{StaticResource MicroCaptionStyle}"
-                                   Margin="0,2,0,0" />
-                    </StackPanel>
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" />
 
-                    <TextBlock Grid.Column="2"
-                               Text="{Binding SessionDetailText}"
-                               Style="{StaticResource MicroCaptionStyle}"
+                        <StackPanel Grid.Column="4"
+                                    Orientation="Horizontal"
+                                    HorizontalAlignment="Right">
+                            <Button x:Name="MinimizeWindowButton"
+                                    Width="34"
+                                    Height="30"
+                                    Margin="0,0,6,0"
+                                    Padding="0"
+                                    Content="&#x2013;"
+                                    ToolTip="Minimize cast window"
+                                    Click="OnMinimizeWindowClicked" />
+                            <Button x:Name="ToggleMaximizeWindowButton"
+                                    Width="34"
+                                    Height="30"
+                                    Margin="0,0,6,0"
+                                    Padding="0"
+                                    Content="&#x25A1;"
+                                    ToolTip="Toggle full size"
+                                    Click="OnToggleMaximizeWindowClicked" />
+                            <Button x:Name="CloseWindowButton"
+                                    Width="34"
+                                    Height="30"
+                                    Padding="0"
+                                    Content="&#x2715;"
+                                    ToolTip="Close cast"
+                                    Click="OnCloseWindowClicked" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="8" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="8" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="8" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <Button x:Name="CaptureTargetMenuButton"
+                                Content="{Binding SelectedCaptureTargetText}"
+                                IsEnabled="{Binding CanEditCaptureTarget}"
+                                PreviewMouseLeftButtonDown="OnInteractiveControlPreviewMouseLeftButtonDown"
+                                Click="OnCaptureTargetMenuButtonClicked"
+                                ToolTip="{Binding CaptureTargetHintText}"
+                                HorizontalContentAlignment="Left"
+                                MinWidth="320"
+                                Margin="0" />
+                        <Button Grid.Column="2"
+                                x:Name="PinButton"
+                                Content="{Binding CastWindowPinText}"
+                                Command="{Binding ToggleCastWindowPinCommand}"
+                                PreviewMouseLeftButtonDown="OnInteractiveControlPreviewMouseLeftButtonDown"
+                                ToolTip="{Binding CastWindowPinHintText}"
+                                MinWidth="104"
+                                Margin="0" />
+                        <Button Grid.Column="4"
+                                x:Name="ProximityButton"
+                                Content="{Binding ToggleProximityText}"
+                                Command="{Binding ToggleProximityCommand}"
+                                PreviewMouseLeftButtonDown="OnInteractiveControlPreviewMouseLeftButtonDown"
+                                ToolTip="{Binding ToggleProximityHintText}"
+                                MinWidth="126"
+                                Margin="0" />
+                        <Button Grid.Column="6"
+                                x:Name="StopButton"
+                                Content="Stop"
+                                Command="{Binding StopCastCommand}"
+                                PreviewMouseLeftButtonDown="OnInteractiveControlPreviewMouseLeftButtonDown"
+                                MinWidth="74"
+                                Margin="0" />
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <Border x:Name="CompositeViewportHost"
+                    Grid.Row="2"
+                    CornerRadius="10"
+                    Background="#FF000000"
+                    BorderBrush="{StaticResource LineBrush}"
+                    BorderThickness="1"
+                    Visibility="Collapsed"
+                    IsHitTestVisible="False"
+                    ClipToBounds="True">
+                <Grid>
+                    <Image x:Name="CompositePreviewImage"
+                           Stretch="Uniform"
+                           HorizontalAlignment="Stretch"
+                           VerticalAlignment="Stretch"
+                           SnapsToDevicePixels="True"
+                           RenderOptions.BitmapScalingMode="HighQuality" />
+                    <TextBlock x:Name="CompositeStatusText"
+                               HorizontalAlignment="Center"
                                VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis" />
-
-                    <StackPanel Grid.Column="4"
-                                Orientation="Horizontal"
-                                HorizontalAlignment="Right">
-                        <Button x:Name="MinimizeWindowButton"
-                                Width="34"
-                                Height="30"
-                                Margin="0,0,6,0"
-                                Padding="0"
-                                Content="&#x2013;"
-                                ToolTip="Minimize cast window"
-                                Click="OnMinimizeWindowClicked" />
-                        <Button x:Name="ToggleMaximizeWindowButton"
-                                Width="34"
-                                Height="30"
-                                Margin="0,0,6,0"
-                                Padding="0"
-                                Content="&#x25A1;"
-                                ToolTip="Toggle full size"
-                                Click="OnToggleMaximizeWindowClicked" />
-                        <Button x:Name="CloseWindowButton"
-                                Width="34"
-                                Height="30"
-                                Padding="0"
-                                Content="&#x2715;"
-                                ToolTip="Close cast"
-                                Click="OnCloseWindowClicked" />
-                    </StackPanel>
+                               Style="{StaticResource MicroCaptionStyle}"
+                               Text="Composite preview is warming up."
+                               Visibility="Collapsed" />
                 </Grid>
-
-                <Grid Grid.Row="2">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="8" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="8" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="8" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <ComboBox x:Name="CaptureTargetComboBox"
-                              ItemsSource="{Binding CaptureTargets}"
-                              SelectedItem="{Binding SelectedCaptureTarget}"
-                              DisplayMemberPath="SelectionText"
-                              IsEnabled="{Binding CanEditCaptureTarget}"
-                              ToolTip="{Binding CaptureTargetHintText}"
-                              Margin="0"
-                              MinWidth="320" />
-                    <Button Grid.Column="2"
-                            x:Name="PinButton"
-                            Content="{Binding CastWindowPinText}"
-                            Command="{Binding ToggleCastWindowPinCommand}"
-                            ToolTip="{Binding CastWindowPinHintText}"
-                            MinWidth="104"
-                            Margin="0" />
-                    <Button Grid.Column="4"
-                            x:Name="ProximityButton"
-                            Content="{Binding ToggleProximityText}"
-                            Command="{Binding ToggleProximityCommand}"
-                            ToolTip="{Binding ToggleProximityHintText}"
-                            MinWidth="126"
-                            Margin="0" />
-                    <Button Grid.Column="6"
-                            x:Name="StopButton"
-                            Content="Stop"
-                            Command="{Binding StopCastCommand}"
-                            MinWidth="74"
-                            Margin="0" />
-                </Grid>
-            </Grid>
-        </Border>
+            </Border>
+        </Grid>
 
         <primitives:Thumb x:Name="LeftGrip"
                           Width="8"

@@ -50,6 +50,12 @@ public sealed class ScrcpyCaptureTargetCatalogTests
         Assert.Collection(
             targets,
             target => Assert.Equal("0", target.Id),
+            target =>
+            {
+                Assert.Equal("display-0-composite", target.Id);
+                Assert.Equal(ScrcpyPresentationMode.StereoCompositeExperimental, target.PresentationMode);
+                Assert.Contains("experimental fused crop from Display 0", target.Detail);
+            },
             target => Assert.Equal("1", target.Id),
             target => Assert.Equal("50", target.Id),
             target => Assert.Equal("51", target.Id),

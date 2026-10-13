@@ -25,6 +25,8 @@ public sealed record ScrcpyCaptureTarget(
 
     public string? Angle { get; init; }
 
+    public ScrcpyPresentationMode PresentationMode { get; init; } = ScrcpyPresentationMode.Raw;
+
     public int SortOrder { get; init; } = 100;
 
     public bool IsExperimental { get; init; }

@@ -8,6 +8,13 @@ namespace QuestMultiStream.App.ViewModels;
 
 public sealed class MainWindowViewModel : ObservableObject
 {
+    private readonly record struct CaptureTargetPreference(
+        ScrcpyCaptureTargetKind? Kind,
+        string? Id,
+        int? DisplayId,
+        string? CameraId,
+        ScrcpyPresentationMode PresentationMode);
+
     private readonly Dispatcher _dispatcher;
     private readonly QuestCastSessionManager _sessionManager;
     private readonly CastControlWindowManager _castControlWindowManager;
@@ -158,7 +165,7 @@ public sealed class MainWindowViewModel : ObservableObject
         => "Each Quest row lists the real display and camera feeds that scrcpy reports. Live casts use a custom wrapper overlay that tracks one borderless scrcpy window so the controls and resize behavior stay locked to the same surface.";
 
     public string DisplayGuideText
-        => "Refresh Devices reloads the feed list from scrcpy. Display 0 is the reliable stereo mirror, cameras 1, 50, and 51 are valid on this headset, and Display 3 plus the tiny surfaces stay marked as experimental.";
+        => "Refresh Devices reloads the feed list from scrcpy. Display 0 is the reliable stereo mirror, Composite View is an experimental fused preview built from Display 0 inside the wrapper, cameras 1, 50, and 51 are valid on this headset, and Display 3 plus the tiny surfaces stay marked as experimental.";
 
     public string ProfileSummary
         => $"{ParsePositiveInt(MaxSizeText, 1344, 640, 4096)} px max · {ParsePositiveInt(VideoBitRateText, 20, 2, 200)} Mbps · {ParsePositiveInt(MaxFpsText, 30, 15, 144)} fps";
@@ -207,14 +214,14 @@ public sealed class MainWindowViewModel : ObservableObject
         _dependencies = _sessionManager.GetDependencySnapshot();
         UpdateDependencySnapshot(_dependencies);
 
-        var previousSelections = new Dictionary<string, (ScrcpyCaptureTargetKind? Kind, string? Id)>(StringComparer.OrdinalIgnoreCase);
+        var previousSelections = new Dictionary<string, CaptureTargetPreference>(StringComparer.OrdinalIgnoreCase);
         var previousProximityModes = new Dictionary<string, QuestProximityMode>(StringComparer.OrdinalIgnoreCase);
         var previousPinnedStates = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         await RunOnUiAsync(() =>
         {
             foreach (var device in Devices)
             {
-                previousSelections[device.Serial] = (device.SelectedCaptureTargetKind, device.SelectedCaptureTargetId);
+                previousSelections[device.Serial] = BuildCaptureTargetPreference(device.SelectedCaptureTarget);
                 previousProximityModes[device.Serial] = device.ProximityMode;
                 previousPinnedStates[device.Serial] = device.IsCastWindowPinned;
             }
@@ -258,7 +265,10 @@ public sealed class MainWindowViewModel : ObservableObject
                     row.SetCaptureTargets(
                         captureTargetsBySerial.GetValueOrDefault(device.Serial),
                         preferredTarget.Kind,
-                        preferredTarget.Id);
+                        preferredTarget.Id,
+                        preferredTarget.DisplayId,
+                        preferredTarget.CameraId,
+                        preferredTarget.PresentationMode);
                 }
                 else
                 {
@@ -304,10 +314,19 @@ public sealed class MainWindowViewModel : ObservableObject
         }
 
         var previousTarget = FindCaptureTarget(row, existingSession.LaunchProfile);
+        DesktopAppLog.Info(
+            $"SwitchCaptureTarget requested. Serial={row.Serial}; " +
+            $"Requested={DescribeCaptureTarget(captureTarget)}; " +
+            $"RowSelected={DescribeCaptureTarget(row.SelectedCaptureTarget)}; " +
+            $"PreviousSession={DescribeLaunchProfile(existingSession.LaunchProfile)}");
 
         try
         {
-            await _sessionManager.RestartSessionAsync(row.Device, BuildLaunchProfile(captureTarget));
+            var launchProfile = BuildLaunchProfile(captureTarget);
+            DesktopAppLog.Info(
+                $"SwitchCaptureTarget restarting session. Serial={row.Serial}; " +
+                $"LaunchProfile={DescribeLaunchProfile(launchProfile)}");
+            await _sessionManager.RestartSessionAsync(row.Device, launchProfile);
         }
         catch
         {
@@ -460,6 +479,7 @@ public sealed class MainWindowViewModel : ObservableObject
             CameraId = cameraId,
             Crop = captureTarget.Crop,
             Angle = captureTarget.Angle,
+            PresentationMode = captureTarget.PresentationMode,
             CaptureTargetLabel = captureTarget.SelectionText,
             MaxSize = ParsePositiveInt(MaxSizeText, 1344, 640, 4096),
             MaxFps = ParsePositiveInt(MaxFpsText, 30, 15, 144),
@@ -485,6 +505,16 @@ public sealed class MainWindowViewModel : ObservableObject
             }
         }
 
+        var profileMatch = row.CaptureTargets.FirstOrDefault(target =>
+            target.Kind == launchProfile.VideoSource &&
+            target.PresentationMode == launchProfile.PresentationMode &&
+            target.LaunchDisplayId == launchProfile.DisplayId &&
+            string.Equals(target.LaunchCameraId, launchProfile.CameraId, StringComparison.Ordinal));
+        if (profileMatch is not null)
+        {
+            return profileMatch;
+        }
+
         var expectedId = launchProfile.VideoSource == ScrcpyCaptureTargetKind.Camera
             ? launchProfile.CameraId
             : launchProfile.DisplayId?.ToString();
@@ -493,6 +523,22 @@ public sealed class MainWindowViewModel : ObservableObject
             target.Kind == launchProfile.VideoSource &&
             string.Equals(target.Id, expectedId, StringComparison.Ordinal));
     }
+
+    private static CaptureTargetPreference BuildCaptureTargetPreference(ScrcpyCaptureTarget? captureTarget)
+        => new(
+            captureTarget?.Kind,
+            captureTarget?.Id,
+            captureTarget?.LaunchDisplayId,
+            captureTarget?.LaunchCameraId,
+            captureTarget?.PresentationMode ?? ScrcpyPresentationMode.Raw);
+
+    private static string DescribeCaptureTarget(ScrcpyCaptureTarget? captureTarget)
+        => captureTarget is null
+            ? "<null>"
+            : $"{captureTarget.Kind}:{captureTarget.Id}:display={captureTarget.LaunchDisplayId?.ToString() ?? "<null>"}:camera={captureTarget.LaunchCameraId ?? "<null>"}:mode={captureTarget.PresentationMode}";
+
+    private static string DescribeLaunchProfile(ScrcpyLaunchProfile launchProfile)
+        => $"target={launchProfile.CaptureTargetId};source={launchProfile.VideoSource};display={launchProfile.DisplayId?.ToString() ?? "<null>"};camera={launchProfile.CameraId ?? "<null>"};mode={launchProfile.PresentationMode}";
 
     private static int ParsePositiveInt(string? value, int fallback, int minimum, int maximum)
     {
