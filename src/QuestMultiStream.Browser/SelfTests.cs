@@ -3,14 +3,83 @@ using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace QuestMultiStream.Browser;
 internal static class SelfTests
 {
+    private static void SessionProjectionTests()
+    {
+        var root=Path.Combine(Path.GetTempPath(),"questms-member-session-"+Guid.NewGuid());Directory.CreateDirectory(root);
+        try {
+            var source=Path.Combine(root,"fixture-publisher.txt");File.WriteAllText(source,"sanitized publisher fixture");
+            var evidence=Path.Combine(root,"projection.json");var selected=Path.Combine(root,"selection.json");
+            using var writer=Process.GetCurrentProcess();var key=RandomNumberGenerator.GetBytes(32);
+            var actors=new Dictionary<string,SessionActor>{{"Q",new(100,200,10001,26,"app-process.26.fixture-q")},{"W",new(101,201,10002,25,"app-process.25.fixture-w")}};
+            var native=new Dictionary<string,string>{{"Q","9223372036854775800"},{"W","9223372036854775799"}};
+            var selection=new MemberSessionSelection("questms.hub.session-selection.v1",evidence,Convert.ToHexString(key),"session.fixture",writer.Id,writer.StartTime.ToUniversalTime().Ticks.ToString(),
+                [new(source,Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(source))).ToLowerInvariant())],actors,native);
+            File.WriteAllText(selected,JsonSerializer.Serialize(selection,HubControl.Json));
+            var old=DateTimeOffset.Parse("1970-01-01T00:00:01Z");
+            var receipts=actors.ToDictionary(p=>p.Key,p=>new RetainedSessionReceipt(old,old.AddMinutes(1),p.Key+"_PEER_STATUS.receipt.json sha256:"+new string('a',64),"session.fixture",p.Value.AppProcessGeneration,native[p.Key],"active",false));
+            var payload=new MemberSessionPayload("questms.hub.owner-projection.v2",new(){{"Q",26},{"W",25}},"session.fixture",DateTimeOffset.UtcNow,actors,[],native,false,"unsupported_without_authenticated_capture_monotonic_anchor",receipts);
+            void Write(string body,bool badMac=false){var bytes=Encoding.UTF8.GetBytes(body);var mac=HMACSHA256.HashData(key,bytes);if(badMac)mac[0]^=1;File.WriteAllText(evidence,JsonSerializer.Serialize(new ProjectionEnvelope(body,Convert.ToHexString(mac)),HubControl.Json));}
+            var original=JsonSerializer.Serialize(payload,HubControl.Json);Write(original);
+            using var reader=new HubSessionProjection(selected);
+            var value=reader.Read();
+            if(value.CurrentAuthoritySupported || !value.PublisherAuthenticated || value.Members[0].AppProcessGeneration!=26 || value.Members[1].AppProcessGeneration!=25 || value.Members[0].NativeProcessGeneration!=native["Q"])
+                throw new Exception("Independent application/native identities failed");
+            // A native timestamp is retained evidence, not a comparison to the PC clock.
+            var future=payload with {RetainedReceiptEvidence=receipts.ToDictionary(p=>p.Key,p=>p.Value with {ObservedUtc=old.AddYears(500),ExpiresUtc=old.AddYears(500).AddMinutes(1)})};
+            Write(JsonSerializer.Serialize(future,HubControl.Json));if(reader.Read().CurrentAuthoritySupported)throw new Exception("Future device time became authority");
+            void Denied(string body){Write(body);if(HubControl.SessionStatus(reader).State!="unavailable")throw new Exception("Invalid session accepted");}
+            foreach(var mode in new[]{"schema","scalar","numeric-string","case-alias","native","actor","session","authority","observations","extra","missing","null","duplicate","stale","future","receipt"}) {
+                var node=JsonNode.Parse(original)!.AsObject();
+                switch(mode) {
+                    case "schema":node["schema"]="questms.hub.owner-projection.v1";break;
+                    case "scalar":node["generation"]=26;break;
+                    case "numeric-string":node["generation"]!["Q"]="26";break;
+                    case "case-alias":node["Session"]="session.fixture";break;
+                    case "native":node["nativeProcessGenerations"]!["Q"]=26;break;
+                    case "actor":node["actors"]!["Q"]!["process_epoch_id"]="app-process.25.wrong";break;
+                    case "session":node["session"]="session.wrong";break;
+                    case "authority":node["currentAuthoritySupported"]=true;break;
+                    case "observations":node["observations"]!["Q.device"]=new JsonObject();break;
+                    case "extra":node["unselected"]=true;break;
+                    case "missing":node.Remove("currentAuthoritySupported");break;
+                    case "null":node["actors"]!["Q"]=null;break;
+                    case "duplicate":Denied(original.Replace("\"session\":\"session.fixture\"","\"session\":\"session.fixture\",\"session\":\"session.fixture\""));continue;
+                    case "stale":node["createdUtc"]=DateTimeOffset.UtcNow.AddMinutes(-1).ToString("O");break;
+                    case "future":node["createdUtc"]=DateTimeOffset.UtcNow.AddMinutes(1).ToString("O");break;
+                    case "receipt":node["retainedReceiptEvidence"]!["W"]!["nativeProcessGeneration"]="1";break;
+                }
+                Denied(node.ToJsonString());
+            }
+            Write(original,true);if(HubControl.SessionStatus(reader).State!="unavailable")throw new Exception("Invalid MAC accepted");
+            Write(original);File.WriteAllText(source,"changed");if(HubControl.SessionStatus(reader).State!="unavailable")throw new Exception("Changed writer source accepted");
+            File.WriteAllText(source,"sanitized publisher fixture");
+            // Numeric identities can coincide across different devices. No inequality policy.
+            var coincidentActors=new Dictionary<string,SessionActor>{{"Q",actors["Q"]},{"W",actors["Q"] with {ProcessEpochId="app-process.26.fixture-w"}}};
+            var coincidentNative=new Dictionary<string,string>{{"Q",native["Q"]},{"W",native["Q"]}};
+            var coincidentSelection=selection with {Actors=coincidentActors,NativeProcessGenerations=coincidentNative};
+            var coincidentPath=Path.Combine(root,"coincident.json");File.WriteAllText(coincidentPath,JsonSerializer.Serialize(coincidentSelection,HubControl.Json));
+            var coincident=payload with {Actors=coincidentActors,Generation=new(){{"Q",26},{"W",26}},NativeProcessGenerations=coincidentNative,RetainedReceiptEvidence=[]};
+            Write(JsonSerializer.Serialize(coincident,HubControl.Json));using(var equalReader=new HubSessionProjection(coincidentPath)){if(equalReader.Read().Members.Length!=2)throw new Exception("Legitimate coincident values rejected");}
+            Write(original);
+            var wrong=Path.Combine(root,"wrong-selection.json");File.WriteAllText(wrong,JsonSerializer.Serialize(selection with {WriterBirthUtcTicks="1"},HubControl.Json));
+            var denied=false;try{using var invalid=new HubSessionProjection(wrong);}catch(InvalidDataException){denied=true;}if(!denied)throw new Exception("Wrong writer birth accepted");
+            if(HubControl.SessionStatus(null).State!="unavailable")throw new Exception("Unselected publisher accepted");
+            Console.WriteLine("Member session projection: mixed identities, real writer, MAC/source/shape/authority/freshness denials passed");
+        } finally {Directory.Delete(root,true);}
+    }
     public static async Task Run()
     {
         HubControl.SelfTest();
         HubProjectionSource.SelfTest();
+        SessionProjectionTests();
         await HubOwnerBridge.SelfTest();
         await CaptureFanout.SelfTest();
         var bytes = new byte[65+12+12+4];

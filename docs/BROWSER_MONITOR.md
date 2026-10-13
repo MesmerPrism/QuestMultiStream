@@ -1,5 +1,47 @@
 # Two-headset browser control hub successor
 
+## Read-only member session evidence
+
+`--hub-session-owner <absolute-selection.json>` selects the separate read-only
+Q/W session panel. It cannot be combined with `--hub-owner`, `--hub-evidence`
+or `--hub-bridge`. The authenticated `GET /api/hub/session` returns member
+identities and retained receipts; pair-action POSTs return 409 in this mode.
+The panel has only refresh and receipt disclosure controls. Existing v1 pair
+controls remain unchanged when this option is not selected.
+
+The closed selection schema is `questms.hub.session-selection.v1`, with
+`evidencePath`, 32-byte `keyHex`, `session`, exact `writerPid` and decimal
+`writerBirthUtcTicks`, bounded `sourcePins`, `actors` and
+`nativeProcessGenerations`. Actors use the closed member fields `pid`,
+`start_ticks`, `uid`, `app_process_generation`, `process_epoch_id`. Both maps
+have Q/W keys. Native generations are opaque decimal strings, never JavaScript
+numbers or application generations. Numeric identities may coincide across
+devices; the consumer does not impose an inequality requirement.
+
+The selected publisher signs a `ProjectionEnvelope` containing
+`questms.hub.owner-projection.v2`. Its `generation` is a Q/W application map;
+`actors` and `nativeProcessGenerations` must match the selection exactly.
+`currentAuthoritySupported` must be false, `observations` empty, and
+`authorityStatus` exactly
+`unsupported_without_authenticated_capture_monotonic_anchor`.
+`retainedReceiptEvidence` may contain Q/W recorded active receipts with native
+observation/expiry, receipt identity, selected session and matching app/native
+generation. This is retained evidence, not current pair or frame acceptance.
+
+The consumer validates the real publisher PID/birth, source hashes, HMAC,
+closed/case-sensitive fields, strict numeric types and size bounds. Duplicate
+properties, changed identities and unsupported authority claims are denied.
+Local publisher-file freshness is distinct from native authority: native
+expiry is never compared with the PC clock. Missing/invalid/stale publisher
+evidence clears the panel and does not preserve stale member identities.
+
+The Release/self-test and session-view controls use sanitized modeled member
+facts, a real host process identity and authenticated files. Rendered QA uses
+the production route and UI on an isolated loopback fixture host. No headset,
+new pair owner, live publisher adoption, media acceptance or cleanup proof is
+established by this feature. Live publisher integration needs its own selected
+original-owner slot and must not alter a comparable memory workload.
+
 The hub assigns Q and W by explicit source IDs (`q`/`w` by default; optional
 `?q=<id>&w=<id>`). Screen mirrors and app peer streaming remain independent.
 The main view shows both mirrors, independently aged channel states, controller

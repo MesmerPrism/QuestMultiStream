@@ -16,6 +16,11 @@ public enum HubObservationProvenance { Recorded, SourceOwnerValidated }
 
 public sealed class HubControl
 {
+    public static HubSessionStatus SessionStatus(HubSessionProjection? source) {
+        if(source is null)return HubSessionStatus.Unavailable();
+        try{return source.Read();}
+        catch(Exception){return HubSessionStatus.Unavailable();} // No private paths or stale identities on read failure.
+    }
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) {
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
         Converters = { new StrictUtcDateConverter() }
