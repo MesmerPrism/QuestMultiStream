@@ -39,7 +39,7 @@ var origin = $"http://127.0.0.1:{port}";
 builder.WebHost.UseUrls(origin);
 var app = builder.Build();
 var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
-if (args.Length % 2 != 0 || args.Where((_,i)=>i%2==0).Any(a=>a is not "--selection" and not "--fixture" and not "--host-end" and not "--port" and not "--hub-evidence" and not "--hub-bridge" and not "--hub-owner") || args.Where((_,i)=>i%2==0).Distinct().Count()!=args.Length/2)
+if (args.Length % 2 != 0 || args.Where((_,i)=>i%2==0).Any(a=>a is not "--selection" and not "--fixture" and not "--host-end" and not "--port" and not "--hub-evidence" and not "--hub-bridge" and not "--hub-owner" and not "--hub-session-owner") || args.Where((_,i)=>i%2==0).Distinct().Count()!=args.Length/2)
     throw new InvalidOperationException("Only explicit --selection, --fixture and --host-end inputs are accepted");
 string? Option(string key) { var i = Array.IndexOf(args,key); return i < 0 ? null : args[i+1]; }
 var selectionPath = Option("--selection");
@@ -54,6 +54,9 @@ if(hostEnd is not null && (hostEnd <= DateTimeOffset.UtcNow || selection is not 
 var fixture = Option("--fixture");
 if(Option("--hub-evidence") is not null && Option("--hub-owner") is not null)throw new InvalidDataException("Choose recorded evidence or selected owner projection");
 using var projection = Option("--hub-owner") is {} projectionPath?new HubProjectionSource(projectionPath):null;
+if(Option("--hub-session-owner") is not null && new[]{"--hub-owner","--hub-evidence","--hub-bridge"}.Any(key=>Option(key) is not null))
+    throw new InvalidDataException("Read-only member sessions cannot select a pair-control source");
+using var sessionProjection = Option("--hub-session-owner") is {} sessionPath?new HubSessionProjection(sessionPath):null;
 var hub = new HubControl(Option("--hub-evidence"),projection);
 using var hubBridge = Option("--hub-bridge") is { } bridgePath ? new HubOwnerBridge(bridgePath) : null;
 var hubActions = new HubActionHandler(hub,hubBridge);
@@ -69,6 +72,7 @@ app.UseWebSockets(); app.UseDefaultFiles(); app.UseStaticFiles();
 bool Authorized(HttpContext c) => CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(c.Request.Query["token"].ToString()), Encoding.ASCII.GetBytes(token));
 app.MapGet("/api/sources", (HttpContext c) => Authorized(c) ? Results.Json(selection?.Sources.Select(s => new {s.Id, s.Label, s.DisplayId, s.Crop}) ?? []) : Results.Unauthorized());
 app.MapGet("/api/fixture", (HttpContext c) => Authorized(c) ? Results.Json(new { available = fixture is not null }) : Results.Unauthorized());
+app.MapGet("/api/hub/session", (HttpContext c) => Authorized(c) ? Results.Json(HubControl.SessionStatus(sessionProjection)) : Results.Unauthorized());
 app.MapGet("/api/captures", (HttpContext c) => {
     if(!Authorized(c))return Results.Unauthorized();
     lock(sync)return Results.Json(captureStates.Select(pair=>new {id=pair.Key,state=pair.Value,retirementPending=busy.Contains(pair.Key)}).ToArray());
@@ -125,7 +129,7 @@ app.MapGet("/observe/{id}",async (HttpContext c,string id)=>{
     } finally {stop.Cancel();if(receive is not null)await receive;}
 });
 app.MapGet("/api/hub", (HttpContext c) => Authorized(c) ? Results.Json(hub.Status(DateTimeOffset.UtcNow,hubBridge is not null,hubBridge?.Actions)) : Results.Unauthorized());
-app.MapGet("/api/hub/capabilities", (HttpContext c) => Authorized(c) ? Results.Json(new { bridgeSelected = hubBridge is not null, direction = "both", actions=hubBridge?.Actions??["establish","disconnect"],execution = "Owner must authenticate live authority; selection alone proves no readiness" }) : Results.Unauthorized());
+app.MapGet("/api/hub/capabilities", (HttpContext c) => Authorized(c) ? Results.Json(new { bridgeSelected = hubBridge is not null, readOnlySession = sessionProjection is not null, direction = "both", actions=sessionProjection is not null?Array.Empty<string>():hubBridge?.Actions??["establish","disconnect"],execution = "Owner must authenticate live authority; selection alone proves no readiness" }) : Results.Unauthorized());
 app.MapGet("/api/hub/actions/{requestId}", async (HttpContext c,string requestId) => {
     if (!Authorized(c)) return Results.Unauthorized();
     if (hubBridge is null) return Results.Json(new { error = "App-owner executor unavailable" },statusCode:503);
@@ -135,6 +139,7 @@ app.MapGet("/api/hub/actions/{requestId}", async (HttpContext c,string requestId
 });
 app.MapPost("/api/hub/actions", async (HttpContext c) => {
     if (!Authorized(c) || c.Request.Headers.Origin != origin) return Results.Unauthorized();
+    if(sessionProjection is not null)return Results.Json(new {error="Read-only member session; pair actions unavailable"},statusCode:409);
     if (c.Request.ContentLength is null or > 4096) return Results.BadRequest(new { error = "Bounded JSON request required" });
     try {
         var request = await JsonSerializer.DeserializeAsync<HubAction>(c.Request.Body, HubControl.Json);
