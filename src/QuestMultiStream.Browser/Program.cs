@@ -8,6 +8,11 @@ using System.Text.Json;
 using QuestMultiStream.Browser;
 
 if (args.Contains("--self-test")) { await SelfTests.Run(); return; }
+if(args.Contains("--native-square-self-test")){await NativeSquareCaptureTests.Run(args.Length>=2?args[1]:null,args.Length==3?args[2]:null);return;}
+if(args.Contains("--owner-auth-self-test")){await OwnedCandidateTests.AuthTest();return;}
+if(args.Contains("--capture-owner-self-test")){await CaptureOwnerTests.Run();return;}
+if(args.Length==2&&args[0]=="--capture-owner-fixtures"){await CaptureOwnerTests.Export(args[1]);return;}
+if(args.Contains("--candidate-self-test")){await OwnedCandidateTests.Run(args.Length==3&&args[1]=="--fixture-python"?args[2]:null);return;}
 if(args.Contains("--hub-action")) {
     if(args.Length%2!=0 || args.Where((_,i)=>i%2==0).Any(a=>a is not "--hub-action" and not "--hub-evidence" and not "--hub-owner" and not "--hub-bridge") || args.Where((_,i)=>i%2==0).Distinct().Count()!=args.Length/2)
         throw new InvalidDataException("Typed action CLI accepts only explicit action and owner selections");
@@ -39,15 +44,33 @@ var origin = $"http://127.0.0.1:{port}";
 builder.WebHost.UseUrls(origin);
 var app = builder.Build();
 var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
-if (args.Length % 2 != 0 || args.Where((_,i)=>i%2==0).Any(a=>a is not "--selection" and not "--fixture" and not "--host-end" and not "--port" and not "--hub-evidence" and not "--hub-bridge" and not "--hub-owner" and not "--hub-session-owner") || args.Where((_,i)=>i%2==0).Distinct().Count()!=args.Length/2)
+if (args.Length % 2 != 0 || args.Where((_,i)=>i%2==0).Any(a=>a is not "--selection" and not "--owned-selection" and not "--native-capture" and not "--capture-owner" and not "--fixture" and not "--host-end" and not "--port" and not "--hub-evidence" and not "--hub-bridge" and not "--hub-owner" and not "--hub-session-owner") || args.Where((_,i)=>i%2==0).Distinct().Count()!=args.Length/2)
     throw new InvalidOperationException("Only explicit --selection, --fixture and --host-end inputs are accepted");
 string? Option(string key) { var i = Array.IndexOf(args,key); return i < 0 ? null : args[i+1]; }
 var selectionPath = Option("--selection");
 using var selectionLock = selectionPath is null ? null : File.Open(selectionPath, FileMode.Open, FileAccess.Read, FileShare.Read);
 HostSelection? selection = selectionPath is null ? null : JsonSerializer.Deserialize<HostSelection>(File.ReadAllText(selectionPath), new JsonSerializerOptions { Converters = { new StrictUtcDateConverter() } });
 selection?.Validate();
+var ownedPath=Option("--owned-selection");
+using var ownedLock=ownedPath is null?null:File.Open(ownedPath,FileMode.Open,FileAccess.Read,FileShare.Read);
+if(ownedLock?.Length>65536)throw new InvalidDataException("Owned selection exceeds bound");
+OwnedDisplaySelection? owned=ownedPath is null?null:OwnerJson.Read<OwnedDisplaySelection>(File.ReadAllBytes(ownedPath));
+if(owned is not null&&selection is not null)throw new InvalidDataException("Choose one producer implementation");owned?.Validate();
+var nativePath=Option("--native-capture");
+using var nativeLock=nativePath is null?null:File.Open(nativePath,FileMode.Open,FileAccess.Read,FileShare.Read);
+if(nativeLock?.Length>65536)throw new InvalidDataException("Native capture selection exceeds bound");
+NativeCaptureSelection? native=nativePath is null?null:OwnerJson.Read<NativeCaptureSelection>(File.ReadAllBytes(nativePath));
+var captureOwnerPath=Option("--capture-owner");
+using var captureOwnerLock=captureOwnerPath is null?null:File.Open(captureOwnerPath,FileMode.Open,FileAccess.Read,FileShare.Read);
+if(captureOwnerLock?.Length>4096)throw new InvalidDataException("Bounded private capture owner selection required");
+var captureConfig=captureOwnerPath is null?null:OwnerJson.Read<CaptureOwnerConfig>(File.ReadAllBytes(captureOwnerPath));
+native?.RequireDurableAdmission(owned is not null,captureConfig is not null);
+native?.Validate();native?.RequireSameTarget(selection,owned);
+bool ModeAllowed(string id,string mode)=>mode==NativeCaptureSelection.Raw||mode==NativeCaptureSelection.Square&&native?.Source(id) is not null;
+string[] CaptureModes(string id)=>native?.Modes(id)??[NativeCaptureSelection.Raw];
 var hostEndInput = Option("--host-end");
 if (selection is not null && hostEndInput is null) throw new InvalidOperationException("Live host requires an explicit lifetime");
+if(owned is not null&&hostEndInput is null)throw new InvalidDataException("Owned host requires explicit lifetime");
 if (selection?.CaptureLifetime == MonitorLifetime.UntilStop && hostEndInput != MonitorLifetime.UntilStop) throw new InvalidOperationException("Until-stop capture requires until-stop host");
 var hostEnd = hostEndInput is null or MonitorLifetime.UntilStop ? (DateTimeOffset?)null : MonitorLifetime.ParseUtc(hostEndInput);
 if(hostEnd is not null && (hostEnd <= DateTimeOffset.UtcNow || selection is not null && hostEnd < selection.DeadlineUtc)) throw new InvalidOperationException("Host end must be future and at or after selected capture deadline");
@@ -59,23 +82,39 @@ if(Option("--hub-session-owner") is not null && new[]{"--hub-owner","--hub-evide
 using var sessionProjection = Option("--hub-session-owner") is {} sessionPath?new HubSessionProjection(sessionPath):null;
 var hub = new HubControl(Option("--hub-evidence"),projection);
 using var hubBridge = Option("--hub-bridge") is { } bridgePath ? new HubOwnerBridge(bridgePath) : null;
+if(owned is not null&&hubBridge?.LiveSupported!=true)throw new InvalidDataException("Owned display requires current authenticated pair owner");
 var hubActions = new HubActionHandler(hub,hubBridge);
-if (fixture is not null && (selection is not null || !Path.IsPathFullyQualified(fixture) || !File.Exists(fixture))) throw new InvalidOperationException("Fixture requires offline mode and an existing selected absolute file");
+if (fixture is not null && (selection is not null || owned is not null || !Path.IsPathFullyQualified(fixture) || !File.Exists(fixture))) throw new InvalidOperationException("Fixture requires offline mode and an existing selected absolute file");
 var busy = new HashSet<string>(); var sync = new object();
 var fanouts = new Dictionary<string,CaptureFanout>();
 var captureStops = new Dictionary<string,CancellationTokenSource>();
 var captureStates = new Dictionary<string,string>();
-var captureRequests = new Dictionary<string,(string Action,string Source,object Response)>();
+var captureRequests = new Dictionary<string,(string Action,string Source,string Mode,object Response)>();
+var captureModes = new Dictionary<string,string>();
+var ownedRuns=new Dictionary<string,OwnedDisplayProducer>();
+var nativeRuns=new Dictionary<string,NativeSquareCapture>();
+using var ownerAdmission=new SemaphoreSlim(1,1);
+if(captureConfig is not null&&(owned is null||hubBridge?.LiveSupported!=true||hubBridge.UsesSecret(captureConfig.Key)))throw new InvalidDataException("Separate capture audience key and selected owned producers required");
+using var captureOwner=captureConfig is null?null:new CaptureOwnerService(captureConfig,owned!.Sources,s=>new SelectedCaptureInvocation(owned,s),async s=>{
+    AppCaptureAdmission.Require(await hubBridge!.Current(),s);
+},(id,fanout)=>{lock(sync)fanouts[id]=fanout;_=fanout.Metadata.Task.ContinueWith(task=>{if(task.Status==TaskStatus.RanToCompletion)lock(sync){if(fanouts.GetValueOrDefault(id)==fanout&&captureStates.GetValueOrDefault(id)=="requested")captureStates[id]="connected";}},TaskScheduler.Default);},(id,state,held)=>{lock(sync){captureStates[id]=state is "queued" or "running"?"requested":state;if(held)busy.Add(id);else busy.Remove(id);}},operatorStop.Token,()=>!operatorStop.IsCancellationRequested&&(hostEnd is null||DateTimeOffset.UtcNow<hostEnd),
+    modeFactory:(source,mode)=>mode==NativeCaptureSelection.Square
+        ?new NativeSquareCapture(native??throw new InvalidDataException("Native source not selected"),native!.Source(source.SourceId)??throw new InvalidDataException("Native target not selected"))
+        :new SelectedCaptureInvocation(owned!,source),modeValidation:(source,mode)=>ModeAllowed(source.SourceId,mode));
+var captureWire=captureConfig is null?null:new CaptureOwnerTransport(captureConfig,captureOwner!,"127.0.0.1:"+port);
 
 _ = Task.Run(async () => { try { await Task.Delay(Timeout.Infinite, operatorStop.Token); } catch (OperationCanceledException) {} await MonitorLifetime.StopAfterRetirement(() => { lock(sync) return busy.Count == 0; }, app.Lifetime.StopApplication); });
 app.UseWebSockets(); app.UseDefaultFiles(); app.UseStaticFiles();
+if(captureWire is not null)app.MapMethods("/api/owner/{**capturePath}",["GET","POST"],captureWire.Handle);
 bool Authorized(HttpContext c) => CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(c.Request.Query["token"].ToString()), Encoding.ASCII.GetBytes(token));
-app.MapGet("/api/sources", (HttpContext c) => Authorized(c) ? Results.Json(selection?.Sources.Select(s => new {s.Id, s.Label, s.DisplayId, s.Crop}) ?? []) : Results.Unauthorized());
+app.MapGet("/api/sources", (HttpContext c) => Authorized(c) ? Results.Json(owned is not null?owned.Sources.Select(s=>(object)new{id=s.SourceId,s.Label,displayId=0,crop=(string?)null,s.DeviceId,sourceKind="owned-rmanvid1-v1",captureModes=CaptureModes(s.SourceId)}):selection?.Sources.Select(s => new {s.Id, s.Label, s.DisplayId, s.Crop,captureModes=CaptureModes(s.Id)}) ?? []) : Results.Unauthorized());
 app.MapGet("/api/fixture", (HttpContext c) => Authorized(c) ? Results.Json(new { available = fixture is not null }) : Results.Unauthorized());
 app.MapGet("/api/hub/session", (HttpContext c) => Authorized(c) ? Results.Json(HubControl.SessionStatus(sessionProjection)) : Results.Unauthorized());
 app.MapGet("/api/captures", (HttpContext c) => {
     if(!Authorized(c))return Results.Unauthorized();
-    lock(sync)return Results.Json(captureStates.Select(pair=>new {id=pair.Key,state=pair.Value,retirementPending=busy.Contains(pair.Key)}).ToArray());
+    (string Id,string State,bool Held,string? Mode)[] snapshot;
+    lock(sync)snapshot=captureStates.Select(pair=>(pair.Key,pair.Value,busy.Contains(pair.Key),captureModes.GetValueOrDefault(pair.Key))).ToArray();
+    return Results.Json(snapshot.Select(row=>new{id=row.Id,state=row.State,retirementPending=row.Held,captureMode=captureOwner is null?row.Mode:((captureOwner.Current(row.Id).Body as CaptureCurrent)?.Operation is {} operation?operation.Mode??NativeCaptureSelection.Raw:null)}).ToArray());
 });
 app.MapPost("/api/captures/{id}/{action}", async (HttpContext c,string id,string action) => {
     if(!Authorized(c)||c.Request.Headers.Origin!=origin)return Results.Unauthorized();
@@ -84,31 +123,49 @@ app.MapPost("/api/captures/{id}/{action}", async (HttpContext c,string id,string
     try {request=await JsonSerializer.DeserializeAsync<CaptureOperatorRequest>(c.Request.Body,HubControl.Json);}
     catch(JsonException){return Results.BadRequest();}
     if(request is null || !Guid.TryParseExact(request.RequestId,"D",out _))return Results.BadRequest();
+    var mode=request.CaptureMode??NativeCaptureSelection.Raw;
+    if(!NativeCaptureSelection.Mode(mode)||action=="stop"&&request.CaptureMode is not null||action=="start"&&!ModeAllowed(id,mode))return Results.BadRequest(new{error="Capture mode is not configured for this source"});
+    if(captureOwner is not null){
+        var selectedSource=owned!.Sources.SingleOrDefault(s=>s.SourceId==id);if(selectedSource is null)return Results.NotFound();
+        try{
+            var original=captureOwner.Original(request.RequestId);
+            if(original.Status==200){var result=(CaptureOwnerResult)original.Body;return result.Action==action&&result.SourceId==id&&(action=="stop"||(result.Mode??NativeCaptureSelection.Raw)==mode)?Results.Json(result,OwnerJson.Options):Results.Conflict();}
+            CaptureInvocation? target=null;
+            if(action=="stop"){var snapshot=(CaptureCurrent)captureOwner.Current(id).Body;if(snapshot.Operation is not {} operation)return Results.Conflict(new{error="No exact current invocation to stop"});target=new(operation.InvocationId,operation.Generation);}
+            var reply=captureOwner.Submit(new("questms.capture.action.v4",request.RequestId,action,id,captureConfig!.OwnerEpoch,selectedSource.OwnerBindingRef.Sha256,target,action=="start"?mode:null));return Results.Json(reply.Body,OwnerJson.Options,statusCode:reply.Status);
+        }catch(InvalidDataException){return Results.BadRequest();}catch(IOException){return Results.Json(new{error="Original capture unresolved"},statusCode:503);}
+    }
+    await ownerAdmission.WaitAsync();try{
     var source=selection?.Sources.SingleOrDefault(s=>s.Id==id);
-    if(source is null)return Results.NotFound();
+    var ownedSource=owned?.Sources.SingleOrDefault(s=>s.SourceId==id);
+    if(source is null&&ownedSource is null)return Results.NotFound();
+    if(action=="start"&&ownedSource is not null){try{AppCaptureAdmission.Require(await hubBridge!.Current(),ownedSource);}catch{return Results.Json(new{state="owner-unavailable"},statusCode:503);}}
     lock(sync) {
-        if(captureRequests.TryGetValue(request.RequestId,out var prior))return prior.Action==action&&prior.Source==id?Results.Json(prior.Response):Results.Conflict();
+        if(captureRequests.TryGetValue(request.RequestId,out var prior))return prior.Action==action&&prior.Source==id&&prior.Mode==mode?Results.Json(prior.Response):Results.Conflict();
         if(captureRequests.Count>=256)return Results.Conflict(new {state="request-capacity"});
         if(operatorStop.IsCancellationRequested||hostEnd is not null&&DateTimeOffset.UtcNow>=hostEnd)return Results.StatusCode(410);
         object response;
         if(action=="stop") {
             if(captureStops.TryGetValue(id,out var stop)){stop.Cancel();captureStates[id]="stopping";}
-            response=new {state=busy.Contains(id)?"stopping":"retired",source=id,retirementPending=busy.Contains(id)};
-        } else if(busy.Contains(id))response=new {state=captureStates.GetValueOrDefault(id,"running"),source=id,newCapture=false};
+            response=new {state=captureStates.GetValueOrDefault(id)=="unknown"?"unknown":busy.Contains(id)?"stopping":"retired",source=id,retirementPending=busy.Contains(id)};
+        } else if(busy.Contains(id)){if(captureModes.GetValueOrDefault(id)!=mode)return Results.Conflict(new{error="Stop and retire the current capture before changing source mode"});response=new {state=captureStates.GetValueOrDefault(id,"running"),source=id,newCapture=false};}
         else {
-            busy.Add(id);var fanout=new CaptureFanout();fanouts[id]=fanout;
-            _=fanout.Metadata.Task.ContinueWith(task=>{if(task.Status==TaskStatus.RanToCompletion)lock(sync){if(captureStates.GetValueOrDefault(id)=="requested")captureStates[id]="connected";}},TaskScheduler.Default);
+            busy.Add(id);captureModes[id]=mode;var fanout=new CaptureFanout();fanouts[id]=fanout;
+            _=fanout.Metadata.Task.ContinueWith(task=>{if(task.Status==TaskStatus.RanToCompletion)lock(sync){if(fanouts.GetValueOrDefault(id)==fanout&&captureStates.GetValueOrDefault(id)=="requested")captureStates[id]="connected";}},TaskScheduler.Default);
             var stop=CancellationTokenSource.CreateLinkedTokenSource(operatorStop.Token);captureStops[id]=stop;captureStates[id]="requested";
+            var nativeRun=mode==NativeCaptureSelection.Square?new NativeSquareCapture(native!,native!.Source(id)!):null;if(nativeRun is not null)nativeRuns[id]=nativeRun;
+            var ownedRun=ownedSource is null||nativeRun is not null?null:new OwnedDisplayProducer(owned!,ownedSource);if(ownedRun is not null)ownedRuns[id]=ownedRun;
             _=Task.Run(async()=>{
                 Exception? failure=null;
-                try {await Capture(null,selection!,source,stop.Token,fanout);}
+                try {if(nativeRun is not null)await nativeRun.Run(fanout,stop.Token);else if(ownedRun is not null)await ownedRun.Run(fanout,stop.Token);else await Capture(null,selection!,source!,stop.Token,fanout);}
                 catch(Exception e){failure=e;app.Logger.LogError(e,"Owned capture ended with failure; no replay");}
-                finally {fanout.Complete(failure);lock(sync){busy.Remove(id);captureStates[id]=failure is null?"retired":"failed";captureStops.Remove(id);}stop.Dispose();}
+                finally {fanout.Complete(failure);lock(sync){var held=ownedRun?.Started==true&&!ownedRun.RetirementProven||nativeRun?.RetirementPending==true;if(!held)busy.Remove(id);captureStops.Remove(id);captureStates[id]=held?"unknown":failure is null?"retired":"failed";}stop.Dispose();}
             });
             response=new {state="requested",source=id,newCapture=true};
         }
-        captureRequests.Add(request.RequestId,(action,id,response));return Results.Json(response);
+        captureRequests.Add(request.RequestId,(action,id,mode,response));return Results.Json(response);
     }
+    }finally{ownerAdmission.Release();}
 });
 app.MapGet("/observe/{id}",async (HttpContext c,string id)=>{
     if(!Authorized(c)||c.Request.Headers.Origin!=origin||!c.WebSockets.IsWebSocketRequest){c.Response.StatusCode=403;return;}
@@ -129,7 +186,16 @@ app.MapGet("/observe/{id}",async (HttpContext c,string id)=>{
     } finally {stop.Cancel();if(receive is not null)await receive;}
 });
 app.MapGet("/api/hub", (HttpContext c) => Authorized(c) ? Results.Json(hub.Status(DateTimeOffset.UtcNow,hubBridge is not null,hubBridge?.Actions)) : Results.Unauthorized());
-app.MapGet("/api/hub/capabilities", (HttpContext c) => Authorized(c) ? Results.Json(new { bridgeSelected = hubBridge is not null, readOnlySession = sessionProjection is not null, direction = "both", actions=sessionProjection is not null?Array.Empty<string>():hubBridge?.Actions??["establish","disconnect"],execution = "Owner must authenticate live authority; selection alone proves no readiness" }) : Results.Unauthorized());
+app.MapGet("/api/hub/capabilities", (HttpContext c) => Authorized(c) ? Results.Json(new { bridgeSelected = hubBridge is not null, liveSupported=hubBridge?.LiveSupported==true, readOnlySession = sessionProjection is not null, direction = "both", actions=sessionProjection is not null?Array.Empty<string>():hubBridge?.Actions??["establish","disconnect"],execution = "Owner must authenticate live authority; selection alone proves no readiness" }) : Results.Unauthorized());
+app.MapGet("/api/hub/current",async(HttpContext c)=>{if(!Authorized(c))return Results.Unauthorized();try{return Results.Json(await (hubBridge??throw new InvalidDataException()).Current(),OwnerJson.Options);}catch{return Results.Json(new{error="Current owner unavailable; do not infer stopped"},statusCode:503);}});
+app.MapGet("/api/hub/devices",async(HttpContext c)=>{if(!Authorized(c))return Results.Unauthorized();try{return Results.Json(await (hubBridge??throw new InvalidDataException()).Devices(),OwnerJson.Options);}catch{return Results.Json(new{error="Device inventory unavailable"},statusCode:503);}});
+app.MapPost("/api/hub/selection",async(HttpContext c)=>{
+    if(!Authorized(c)||c.Request.Headers.Origin!=origin)return Results.Unauthorized();if(c.Request.ContentLength is null or >4096)return Results.BadRequest();
+    await ownerAdmission.WaitAsync();try{
+    lock(sync)if(busy.Count!=0)return Results.Conflict(new{error="Display owners remain active or unresolved"});
+    try{using var body=new MemoryStream();await c.Request.Body.CopyToAsync(body);if(body.Length>4096)return Results.BadRequest();return Results.Json(await (hubBridge??throw new InvalidDataException()).Select(OwnerJson.Read<OwnerSelectionRequest>(body.ToArray())),OwnerJson.Options);}catch{return Results.Json(new{error="Selection unresolved or denied; read current owner"},statusCode:409);}
+    }finally{ownerAdmission.Release();}
+});
 app.MapGet("/api/hub/actions/{requestId}", async (HttpContext c,string requestId) => {
     if (!Authorized(c)) return Results.Unauthorized();
     if (hubBridge is null) return Results.Json(new { error = "App-owner executor unavailable" },statusCode:503);
@@ -225,7 +291,7 @@ static async Task Capture(WebSocket? socket, HostSelection config, SourceSelecti
         tcp = await ScrcpyStartup.Connect(source.ForwardPort, () => child.HasExited, deadline.Token, s => evidence.SafeEvent("startup", s));
         var reader = new ScrcpyVideoReader(tcp.GetStream()); var size = await reader.Header(deadline.Token, dummyAlreadyRead: true);
         evidence.SafeEvent("video-ready", new { size.Width, size.Height });
-        var metadata=new {kind="video",size.Width,size.Height,codec="h264"};fanout.SetMetadata(metadata);
+        var metadata=new {kind="video",size.Width,size.Height,codec="h264",captureMode=NativeCaptureSelection.Raw,frameLayout="stereo-sbs"};fanout.SetMetadata(metadata);
         if(socket is not null)await socket.SendAsync(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(metadata)), WebSocketMessageType.Text, true, deadline.Token);
         while (socket is null || socket.State == WebSocketState.Open)
         {
@@ -271,4 +337,4 @@ static async Task Capture(WebSocket? socket, HostSelection config, SourceSelecti
     if (failure is not null) throw failure;
 }
 
-public sealed record CaptureOperatorRequest(string RequestId);
+public sealed record CaptureOperatorRequest(string RequestId,string? CaptureMode=null);

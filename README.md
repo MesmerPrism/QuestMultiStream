@@ -141,3 +141,15 @@ fall back to the locally built WPF EXE when needed.
 
 MIT for this repository. See [LICENSE](LICENSE). Upstream dependencies keep
 their own licenses.
+
+## Experimental owned browser capture
+
+The optional MIT browser host can consume a separately built external
+RMANVID1 producer and select a native 1280×1280 LEFT source per headset.
+The owned/native consumer requires the existing real authenticated app-owner
+service and durable capture-owner selection; it is experimental integration,
+while the public scrcpy browser baseline runs independently. Start with [owned browser integration](docs/OWNED_BROWSER_CANDIDATE.md),
+[native square capture](docs/NATIVE_SQUARE_CAPTURE.md) and the
+[durable capture-owner API](docs/CAPTURE_OWNER_API.md). These paths include
+source-only checks and explicit runtime/firmware evidence limits. Quest/Hostess
+producer implementations remain separately licensed external processes.

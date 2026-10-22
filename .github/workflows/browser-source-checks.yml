@@ -1,0 +1,51 @@
+name: browser-source-checks
+
+on:
+  pull_request:
+    paths:
+      - src/QuestMultiStream.Browser/**
+      - src/QuestMultiStream.Core/**
+      - .github/workflows/browser-source-checks.yml
+      - Directory.Build.props
+      - global.json
+  push:
+    branches: [main]
+    paths:
+      - src/QuestMultiStream.Browser/**
+      - src/QuestMultiStream.Core/**
+      - .github/workflows/browser-source-checks.yml
+      - Directory.Build.props
+      - global.json
+
+permissions:
+  contents: read
+
+jobs:
+  host-and-browser:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build host
+        run: dotnet build src/QuestMultiStream.Browser/QuestMultiStream.Browser.csproj
+      - name: Protocol and host controls
+        run: dotnet run --project src/QuestMultiStream.Browser --no-build -- --self-test
+      - name: Native binding and terminal controls
+        run: dotnet run --project src/QuestMultiStream.Browser --no-build -- --native-square-self-test
+      - name: Durable capture owner and per-target mode controls
+        run: dotnet run --project src/QuestMultiStream.Browser --no-build -- --capture-owner-self-test
+      - name: Real child process retirement controls with modeled media
+        shell: pwsh
+        run: |
+          $fixturePython = (Get-Command python).Source
+          dotnet run --project src/QuestMultiStream.Browser --no-build -- --candidate-self-test --fixture-python $fixturePython
+      - name: Browser module and actual callback controls
+        run: node --test src/QuestMultiStream.Browser/wwwroot/*.test.mjs

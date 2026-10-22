@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 test('actual app callbacks recover status and preserve terminal errors/stop generation', async()=>{
   const nodes=new Map(),intervals=[],requests=[],listeners=new Map();let clock=1000,liveDecoder,liveSocket;
   const context={drawImage(){},clearRect(){},putImageData(){}};
-  const element=id=>{if(!nodes.has(id))nodes.set(id,{value:id==='source'?'q':id==='view'?'full':'',textContent:'',options:[{}],files:[],hidden:false,append(o){this.options.push(o);},getContext(){return context;},pause(){},removeAttribute(){}});return nodes.get(id);};
+  const element=id=>{if(!nodes.has(id))nodes.set(id,{value:id==='source'?'q':id==='view'?'full':'',textContent:'',style:{},options:[{}],files:[],hidden:false,append(o){this.options.push(o);},getContext(){return context;},pause(){},removeAttribute(){}});return nodes.get(id);};
   globalThis.document={hidden:false,getElementById:element,createElement:()=>({getContext:()=>context}),addEventListener(name,callback){listeners.set(name,callback);}};
   globalThis.location={hash:'#token=fixture',pathname:'/',host:'127.0.0.1:43118'};
   globalThis.sessionStorage={getItem(){return null;},setItem(){}};globalThis.history={replaceState(){}};
