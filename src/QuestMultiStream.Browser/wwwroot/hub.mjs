@@ -1,11 +1,15 @@
 import {renderSession} from './session-view.mjs';
+import {mountLiveOwner} from './live-owner.mjs';
+import {captureModeLabel} from './capture-mode.mjs';
 const $=id=>document.getElementById(id);
 const sourceIds=new URLSearchParams(location.search);
 const token=new URLSearchParams(location.hash.slice(1)).get('token')??sessionStorage.getItem('questms-local-token')??'';
 if(token)sessionStorage.setItem('questms-local-token',token);history.replaceState(null,'',location.pathname);
-let generation=null,inflight=false,observations=[],prepared=null,bridgeSelected=false,sessionReadOnly=false,activeRequest=null,refreshing=false;
+let generation=null,inflight=false,observations=[],prepared=null,bridgeSelected=false,sessionReadOnly=false,activeRequest=null,refreshing=false,liveSupported=false,liveActions=[];
 const api=path=>path+'?token='+encodeURIComponent(token);
-try{const response=await fetch(api('/api/hub/capabilities'));if(response.ok){const caps=await response.json();bridgeSelected=caps.bridgeSelected;sessionReadOnly=caps.readOnlySession===true;if(sessionReadOnly){$('actionForm').hidden=true;$('actionResult').textContent='Read-only session mode: pair actions unavailable.';}if(bridgeSelected&&caps.actions)for(const option of [...$('action').options])if(!caps.actions.includes(option.value))option.remove();}}catch{}
+try{const response=await fetch(api('/api/hub/capabilities'));if(response.ok){const caps=await response.json();liveSupported=caps.liveSupported===true;liveActions=Array.isArray(caps.actions)?caps.actions:[];bridgeSelected=caps.bridgeSelected;sessionReadOnly=caps.readOnlySession===true;if(sessionReadOnly){$('actionForm').hidden=true;$('actionResult').textContent='Read-only session mode: pair actions unavailable.';}if(bridgeSelected&&caps.actions)for(const option of [...$('action').options])if(!caps.actions.includes(option.value))option.remove();}}catch{}
+if(liveSupported){await mountLiveOwner({document,storage:sessionStorage,token,actions:liveActions,call:async(path,options={})=>{const response=await fetch(api(path),{cache:'no-store',...options,headers:{'Content-Type':'application/json',...options.headers}});const result=await response.json();if(!response.ok)throw Error(result.error??'Owner request unavailable');return result;}});}else{
+for(const role of ['Q','W'])$('captureMode'+role).parentElement.hidden=true;
 $('controller').textContent=bridgeSelected?'Controller selected · checking its readiness':'Controller unavailable';
 $('execute').textContent=bridgeSelected?'Prepare request first':'Controller unavailable';
 const labels={'Q.device':'Q headset','Q.control':'Q control connection','W.device':'W headset','W.control':'W control connection','Q→W.peer':'Q → W video','W→Q.peer':'W → Q video'};
@@ -17,6 +21,8 @@ function renderRows(){
 }
 async function refresh(){
  if(refreshing)return;refreshing=true;
+ try{const response=await fetch(api('/api/captures'),{cache:'no-store'});if(!response.ok)throw Error('Capture status unavailable');const captures=await response.json();if(!Array.isArray(captures))throw Error('Capture status invalid');for(const role of ['Q','W']){const id=sourceIds.get(role.toLowerCase())??role.toLowerCase(),capture=captures.find(c=>c.id===id);$('displayState'+role).textContent='Display producer: '+(capture?.state??'not started')+(capture?.captureMode?' · '+captureModeLabel(capture.captureMode):'');}}
+ catch{for(const role of ['Q','W'])$('displayState'+role).textContent='Display producer: status unavailable';}
  try{const response=await fetch(api('/api/hub'),{cache:'no-store'});if(!response.ok)throw new Error(response.status===401?'Monitor authentication denied':'Monitor unavailable');const data=await response.json();generation=data.generation;observations=data.observations;renderRows();$('status').textContent='Monitor connected';$('controller').textContent=data.ownerObservationAuthenticated?(bridgeSelected?'Status authenticated · stop controller selected; effects checked when requested':'Status authenticated · controller unavailable'):(bridgeSelected?'Controller selected · status authentication unavailable':'Controller unavailable');$('reports').textContent=JSON.stringify(data,null,2);$('evidenceError').textContent=data.error?'Status report invalid. Check Diagnostics.':'';$('prepare').disabled=sessionReadOnly||inflight||!!data.error;
  }catch(error){generation=null;observations=[];$('linkQW').textContent='Q → W: Unknown';$('linkWQ').textContent='W → Q: Unknown';$('controller').textContent='Controller readiness unknown · status unavailable';prepared=null;$('execute').disabled=true;$('observations').replaceChildren();const row=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=4;cell.textContent='Status unavailable';row.append(cell);$('observations').append(row);$('status').textContent=error.message;$('prepare').disabled=true;}
  finally{refreshing=false;}
@@ -40,3 +46,4 @@ async function refreshSession(){
 }
 $('refreshSession').onclick=refreshSession;
 await refreshSession();setInterval(refreshSession,1000);
+}
