@@ -145,7 +145,7 @@ their own licenses.
 ## Experimental owned browser capture
 
 The optional MIT browser host can consume a separately built external
-RMANVID1 producer and select a native 1280×1280 LEFT source per headset.
+RMANVID1 producer and select a native 1280Ã—1280 LEFT source per headset.
 The owned/native consumer requires the existing real authenticated app-owner
 service and durable capture-owner selection; it is experimental integration,
 while the public scrcpy browser baseline runs independently. Start with [owned browser integration](docs/OWNED_BROWSER_CANDIDATE.md),

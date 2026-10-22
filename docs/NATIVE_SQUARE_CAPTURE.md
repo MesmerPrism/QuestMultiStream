@@ -103,8 +103,9 @@ node --test src/QuestMultiStream.Browser/wwwroot/*.test.mjs
 ```
 
 The external AGPL Quest helper is published separately in
-[rusty-quest/apps/native-browser-capture-android](https://github.com/MesmerPrism/rusty-quest/tree/main/apps/native-browser-capture-android).
-Its build instructions produce `target/native-browser-capture-android/native-browser-capture.jar`;
+[rusty-quest native helper source and build guide](https://github.com/MesmerPrism/rusty-quest/blob/031f7c360dad17aac1aac064d80fa0a8dcff2207/apps/native-browser-capture-android/README.md).
+This is the published experimental review candidate in [Quest PR 130](https://github.com/MesmerPrism/rusty-quest/pull/130),
+not a claim that it is accepted into main. Its build instructions produce `target/native-browser-capture-android/native-browser-capture.jar`;
 set `helper.path`, byte count and SHA256 to those exact locally built bytes.
 No helper binary or platform implementation is bundled here. Select the installed
 Driver hash and complete private transport using the helper's documented firmware
@@ -122,10 +123,11 @@ sample credentials. See [durable capture-owner setup](CAPTURE_OWNER_API.md) and
 [owned bridge configuration](OWNED_BROWSER_CANDIDATE.md). The same selected
 journal survives a host crash; unresolved originals block a new Start without
 replaying the old one. Do not select a fresh journal to bypass uncertainty.
-The external script is
-[Hostess tools/display_stream_qms.py](https://github.com/MesmerPrism/rusty-hostess/blob/main/tools/display_stream_qms.py),
-with its [adapter contract](https://github.com/MesmerPrism/rusty-hostess/blob/main/docs/OWNED_DISPLAY_ADAPTER.md).
-These AGPL scripts are configurable pinned processes rather than MIT source
+The external bridge belongs to [rusty-hostess](https://github.com/MesmerPrism/rusty-hostess):
+`tools/display_stream_qms.py`, with contract `docs/OWNED_DISPLAY_ADAPTER.md`.
+Publication of that adapter is pending; those paths are not claimed to exist on
+public main yet. The MIT consumer and its source-only protocol checks remain
+available here independently. These AGPL scripts are configurable pinned processes rather than MIT source
 dependencies. No source-only test command requires this live service.
 
 October 17 historical evidence covered two simultaneous square sources, a
