@@ -104,8 +104,9 @@ node --test src/QuestMultiStream.Browser/wwwroot/*.test.mjs
 
 The external AGPL Quest helper is published separately in
 [rusty-quest native helper source and build guide](https://github.com/MesmerPrism/rusty-quest/blob/031f7c360dad17aac1aac064d80fa0a8dcff2207/apps/native-browser-capture-android/README.md).
-This is the published experimental review candidate in [Quest PR 130](https://github.com/MesmerPrism/rusty-quest/pull/130),
-not a claim that it is accepted into main. Its build instructions produce `target/native-browser-capture-android/native-browser-capture.jar`;
+This experimental source was accepted in [Quest PR 130](https://github.com/MesmerPrism/rusty-quest/pull/130)
+at [merge 6fefb9b](https://github.com/MesmerPrism/rusty-quest/commit/6fefb9b269301b93ccdf65aed3aad4c0a1934e81).
+Its build instructions produce `target/native-browser-capture-android/native-browser-capture.jar`;
 set `helper.path`, byte count and SHA256 to those exact locally built bytes.
 No helper binary or platform implementation is bundled here. Select the installed
 Driver hash and complete private transport using the helper's documented firmware
@@ -124,10 +125,11 @@ sample credentials. See [durable capture-owner setup](CAPTURE_OWNER_API.md) and
 journal survives a host crash; unresolved originals block a new Start without
 replaying the old one. Do not select a fresh journal to bypass uncertainty.
 The external bridge belongs to [rusty-hostess](https://github.com/MesmerPrism/rusty-hostess):
-`tools/display_stream_qms.py`, with contract `docs/OWNED_DISPLAY_ADAPTER.md`.
-Publication of that adapter is pending; those paths are not claimed to exist on
-public main yet. The MIT consumer and its source-only protocol checks remain
-available here independently. These AGPL scripts are configurable pinned processes rather than MIT source
+[tools/display_stream_qms.py](https://github.com/MesmerPrism/rusty-hostess/blob/f19357b8b8ef2119ca79684098d9425b1a4cb2ee/tools/display_stream_qms.py),
+with its [adapter contract](https://github.com/MesmerPrism/rusty-hostess/blob/f19357b8b8ef2119ca79684098d9425b1a4cb2ee/docs/OWNED_DISPLAY_ADAPTER.md).
+This experimental adapter was accepted in [Hostess PR 42](https://github.com/MesmerPrism/rusty-hostess/pull/42)
+at [merge f19357b](https://github.com/MesmerPrism/rusty-hostess/commit/f19357b8b8ef2119ca79684098d9425b1a4cb2ee). The MIT consumer and its source-only protocol
+checks remain available here independently. These AGPL scripts are configurable pinned processes rather than MIT source
 dependencies. No source-only test command requires this live service.
 
 October 17 historical evidence covered two simultaneous square sources, a
