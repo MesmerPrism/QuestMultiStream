@@ -146,7 +146,9 @@ their own licenses.
 
 The optional MIT browser host can consume a separately built external
 RMANVID1 producer and select a native 1280×1280 LEFT source per headset.
-Start with [owned browser integration](docs/OWNED_BROWSER_CANDIDATE.md),
+The owned/native consumer requires the existing real authenticated app-owner
+service and durable capture-owner selection; it is experimental integration,
+while the public scrcpy browser baseline runs independently. Start with [owned browser integration](docs/OWNED_BROWSER_CANDIDATE.md),
 [native square capture](docs/NATIVE_SQUARE_CAPTURE.md) and the
 [durable capture-owner API](docs/CAPTURE_OWNER_API.md). These paths include
 source-only checks and explicit runtime/firmware evidence limits. Quest/Hostess

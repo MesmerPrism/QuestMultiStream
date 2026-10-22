@@ -14,6 +14,11 @@ public sealed record NativeCaptureSelection(string Schema, HostSelection Transpo
 {
     public const string Square = "square-left", Raw = "raw-two-lens";
     public static bool Mode(string? value) => value is Raw or Square;
+    public void RequireDurableAdmission(bool hasOwnedSelection, bool hasCaptureOwner)
+    {
+        if (!hasOwnedSelection || !hasCaptureOwner)
+            throw new InvalidDataException("Native capture requires the existing durable capture owner and owned selection");
+    }
     public void RequireGlobalAuthority()
     {
         if (!GlobalNativeCaptureAuthorityAcknowledged)
@@ -213,9 +218,7 @@ internal sealed class NativeSquareCapture(NativeCaptureSelection selected, Sourc
                 }
                 catch (Exception cleanup) { RetirementProven = false; failure ??= cleanup; }
             }
-            if (evidence.Errors.Count != 0) { RetirementProven = false; failure ??= new IOException("Native capture evidence retention failed"); }
-            evidence.SafeEvent("terminal", new { retired = RetirementProven, failure = failure?.Message,
-                nativeServerRetirementAcknowledged = false });
+            (RetirementProven, failure) = RetainTerminalEvidence(evidence, RetirementProven, failure);
         }
         if (failure is not null) throw failure;
 
@@ -237,6 +240,18 @@ internal sealed class NativeSquareCapture(NativeCaptureSelection selected, Sourc
                 catch (Exception controlError) { failure ??= controlError; evidence.SafeEvent("stop-write-failed", controlError.Message); }
             }
         }
+    }
+
+    internal static (bool Retired, Exception? Failure) RetainTerminalEvidence(
+        CaptureEvidence evidence, bool retired, Exception? failure)
+    {
+        if (evidence.Errors.Count != 0) { retired = false; failure ??= new IOException("Native capture evidence retention failed"); }
+        evidence.SafeEvent("terminal", new { retired, failure = failure?.Message,
+            nativeServerRetirementAcknowledged = false });
+        // SafeEvent records a create/flush failure without throwing. A failure
+        // on this last append must hold the original just like an earlier one.
+        if (evidence.Errors.Count != 0) { retired = false; failure ??= new IOException("Native capture evidence retention failed"); }
+        return (retired, failure);
     }
 
     internal static Stream DecodeMedia(Stream stdout) => new CryptoStream(stdout,

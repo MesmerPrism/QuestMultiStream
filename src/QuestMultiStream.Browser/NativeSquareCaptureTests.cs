@@ -3,9 +3,31 @@ namespace QuestMultiStream.Browser;
 
 internal static class NativeSquareCaptureTests
 {
+    static void FinalEvidence()
+    {
+        var root=Path.Combine(Path.GetTempPath(),"qms-native-terminal-"+Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var normal=new CaptureEvidence(root,"normal");normal.Event("client-retired",new { mode="MODELED" });
+            var complete=NativeSquareCapture.RetainTerminalEvidence(normal,true,null);
+            if(!complete.Retired||complete.Failure is not null||normal.Errors.Count!=0)
+                throw new Exception("Retained native terminal was held");
+            var denied=new CaptureEvidence(root,"denied");denied.Event("client-retired",new { mode="MODELED" });
+            var path=Path.Combine(root,"denied.002.terminal.json");File.WriteAllText(path,"original terminal collision");
+            if(denied.Errors.Count!=0)throw new Exception("Fixture failed before terminal append");
+            var held=NativeSquareCapture.RetainTerminalEvidence(denied,true,null);
+            if(held.Retired||held.Failure is not IOException||denied.Errors.Count!=1||
+                File.ReadAllText(path)!="original terminal collision"||!File.Exists(Path.Combine(root,"denied.001.client-retired.json")))
+                throw new Exception("Final-event-only retention failure released native original or changed retained bytes");
+            Console.WriteLine("PASS real CaptureEvidence final-event-only CreateNew failure holds native original; prior evidence and colliding original preserved");
+        }
+        finally { Directory.Delete(root,true); }
+    }
     public static async Task Run(string? fixture,string? base64Fixture=null)
     {
         NativeCaptureBindingTests.Run();
+        FinalEvidence();
         string invocation=new('a',32),generation=new('b',32),nonce=new('c',32);
         var row=JsonSerializer.Serialize(new{ @event="TERMINAL",invocation,generation,stop_nonce=nonce,
             state="retired",stop_nonce_matched=true,own_resources_retired=true,native_stop_returned=true,

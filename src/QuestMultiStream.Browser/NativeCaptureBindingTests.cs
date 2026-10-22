@@ -35,6 +35,12 @@ internal static class NativeCaptureBindingTests
             try { native.Validate(); throw new Exception("Implicit global native authority accepted"); }
             catch (InvalidDataException error) when (error.Message.Contains("global native capture authority")) { }
             (native with { GlobalNativeCaptureAuthorityAcknowledged=true }).RequireGlobalAuthority();
+            foreach(var flags in new[]{(false,false),(true,false),(false,true)})
+            {
+                try { native.RequireDurableAdmission(flags.Item1,flags.Item2); throw new Exception("Native capture admitted without durable ownership"); }
+                catch (InvalidDataException) { }
+            }
+            native.RequireDurableAdmission(true,true);
             var binding=new NativeRawOwnerBinding("rusty.hostess.display_stream.owner_binding.v1",
                 adbPin,jarPin,source.Serial,source.Canonical,source.Boot,41235,0,3664,1920,72,16000000);
             var files=0;var accepted=0;var rejected=0;

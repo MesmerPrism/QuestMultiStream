@@ -15,10 +15,17 @@ does not replace the other headset's producer or the bilateral app session.
 
 ## Host selection
 
-`--native-capture <absolute-private-json>` supplements `--selection` or
-`--owned-selection`. With neither present, its `transport` also selects the
-existing raw mirror path. Live hosts still require an explicit `--host-end`.
-An offline fixture cannot select live captures. The versioned shape is:
+`--native-capture <absolute-private-json>` supplements the existing
+`--owned-selection`, durable `--capture-owner` journal and authenticated
+`--hub-bridge` service. The owned/native consumer is experimental and requires
+that real app-owner service to be selected and available; it is not a standalone
+native browser launcher. Do not invent a bridge selection or substitute a
+modeled test owner for a live one. The public scrcpy `--selection` baseline
+remains a standalone browser path; the separate Quest native helper also has
+its own command-line entry independent of QMS.
+
+Live hosts require an explicit `--host-end`. An offline fixture cannot select
+live captures. The versioned native selection shape is:
 
 ```json
 {
@@ -34,7 +41,7 @@ An offline fixture cannot select live captures. The versioned shape is:
 
 The placeholders above are explanatory, not executable configuration. Private
 tools, targets, boot IDs, leases, ports and evidence belong in the local
-selection. Canonical targets must be distinct. A raw selection must match the
+selection. Canonical targets must be distinct. The transport must match the
 native target's serial/canonical/boot/lease. An owned source must join the held,
 hash-verified `rusty.hostess.display_stream.owner_binding.v1` target and ADB tool;
 source-label equality is insufficient. Other binding schemas are not inferred.
@@ -103,12 +110,23 @@ No helper binary or platform implementation is bundled here. Select the installe
 Driver hash and complete private transport using the helper's documented firmware
 constraints; never replace placeholders with an inferred device identity.
 
-Run a configured host with `dotnet run --project src/QuestMultiStream.Browser --
---native-capture <absolute-private-json> --host-end <UTC-deadline> --port <port>`
-(on one command line). It writes the authenticated loopback URL to stdout.
-The host's `--owned-selection` additionally uses the separate
-[Hostess bridge](OWNED_BROWSER_CANDIDATE.md); those AGPL scripts are external
-configurable pinned processes rather than MIT source dependencies.
+For an operator who already has the real authenticated app-owner service and
+its reviewed selections, the combined invocation is:
+
+```powershell
+dotnet run --project src/QuestMultiStream.Browser -- --native-capture <absolute-native-selection> --owned-selection <absolute-owned-selection> --capture-owner <absolute-durable-owner-selection> --hub-bridge <absolute-app-owner-selection> --host-end <UTC-deadline> --port <port>
+```
+
+These are required existing service/configuration dependencies, not generated
+sample credentials. See [durable capture-owner setup](CAPTURE_OWNER_API.md) and
+[owned bridge configuration](OWNED_BROWSER_CANDIDATE.md). The same selected
+journal survives a host crash; unresolved originals block a new Start without
+replaying the old one. Do not select a fresh journal to bypass uncertainty.
+The external script is
+[Hostess tools/display_stream_qms.py](https://github.com/MesmerPrism/rusty-hostess/blob/main/tools/display_stream_qms.py),
+with its [adapter contract](https://github.com/MesmerPrism/rusty-hostess/blob/main/docs/OWNED_DISPLAY_ADAPTER.md).
+These AGPL scripts are configurable pinned processes rather than MIT source
+dependencies. No source-only test command requires this live service.
 
 October 17 historical evidence covered two simultaneous square sources, a
 single-target square/raw/square transition, browser reload/Stop and native
