@@ -15,6 +15,8 @@ public sealed class CaptureFanout
     private readonly List<byte[]> gop = [];
     private byte[]? config; private int gopBytes; private bool completed,invalidConfig;
     private DateTimeOffset keyUtc;
+    private ScrcpyReadProgress? rawReadProgress;
+    public ScrcpyReadProgress? RawReadProgress { get => Volatile.Read(ref rawReadProgress); internal set => Volatile.Write(ref rawReadProgress, value); }
     public readonly TaskCompletionSource<object> Metadata = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public void SetMetadata(object metadata) => Metadata.TrySetResult(metadata);
     public Subscription Subscribe()

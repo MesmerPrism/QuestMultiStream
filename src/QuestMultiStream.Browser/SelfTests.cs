@@ -82,6 +82,7 @@ internal static class SelfTests
         SessionProjectionTests();
         await HubOwnerBridge.SelfTest();
         await CaptureFanout.SelfTest();
+        await RawReadProgressControls();
         var bytes = new byte[65+12+12+4];
         BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(65), 0x68323634);
         BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(69), 1344);
@@ -116,6 +117,89 @@ internal static class SelfTests
         await CloseControls();
         await LifetimeControls();
         Console.WriteLine("PASS actual fragmented packet/header/EOF, malformed length/codec/dummy, truncated body, owner display/crop profile controls; no device operations");
+    }
+    // Catches lost partial-read facts and fabricated complete packets on cancel/EOF.
+    static async Task RawReadProgressControls()
+    {
+        static JsonElement Progress(ScrcpyVideoReader reader)
+        {
+            return JsonSerializer.SerializeToElement(reader.Progress.Snapshot());
+        }
+        static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
+        var metadata = new byte[76];
+        BinaryPrimitives.WriteUInt32BigEndian(metadata.AsSpan(64), 0x68323634);
+        BinaryPrimitives.WriteInt32BigEndian(metadata.AsSpan(68), 1344);
+        BinaryPrimitives.WriteInt32BigEndian(metadata.AsSpan(72), 704);
+        byte[] Packet(ulong flags, params byte[] payload)
+        {
+            var packet = new byte[12 + payload.Length];
+            BinaryPrimitives.WriteUInt64BigEndian(packet, flags);
+            BinaryPrimitives.WriteUInt32BigEndian(packet.AsSpan(8), (uint)payload.Length);
+            payload.CopyTo(packet, 12); return packet;
+        }
+        var config = Packet(1UL << 63, 1, 2);
+        var key = Packet((1UL << 62) | 12345, 3, 4, 5, 7);
+        var delta = Packet(12346, 6);
+        var largePts = Packet(4611686018427387903UL, 42);
+        var reader = new ScrcpyVideoReader(new FragmentStream([..metadata, ..config, ..key, ..delta, ..largePts]));
+        await reader.Header(default, dummyAlreadyRead:true);
+        var p = Progress(reader);
+        Check(p.GetProperty("MetadataComplete").GetBoolean() && p.GetProperty("WireBytes").GetInt64() == 76 && p.GetProperty("ConfigPackets").GetInt64() == 0 && p.GetProperty("FirstPacketUtc").ValueKind == JsonValueKind.Null, "Metadata became a complete packet or included the startup dummy");
+        var before = DateTimeOffset.UtcNow;
+        Check((await reader.Packet(default))!.SequenceEqual(config), "Progress changed config packet bytes");
+        p = Progress(reader);
+        Check(p.GetProperty("ConfigPackets").GetInt64() == 1 && p.GetProperty("LastPts").ValueKind == JsonValueKind.Null, "Config manufactured a media PTS");
+        foreach (var expected in new[]{key,delta})
+            Check((await reader.Packet(default))!.SequenceEqual(expected), "Progress changed original packet bytes");
+        p = Progress(reader);
+        Check(p.GetProperty("ConfigPackets").GetInt64() == 1 && p.GetProperty("KeyPackets").GetInt64() == 1 && p.GetProperty("DeltaPackets").GetInt64() == 1 && p.GetProperty("WireBytes").GetInt64() == 119, "Complete config/key/delta facts lost");
+        Check(p.GetProperty("FirstPacketUtc").GetDateTimeOffset() >= before && p.GetProperty("LastPacketUtc").GetDateTimeOffset() <= DateTimeOffset.UtcNow, "Packet timestamps are not host receipt UTC");
+        Check((await reader.Packet(default))!.SequenceEqual(largePts) && Progress(reader).GetProperty("LastPts").GetString() == "4611686018427387903", "Opaque PTS lost exact JSON precision above 2^53");
+        Check(await reader.Packet(default) is null && Progress(reader).GetProperty("Outcome").GetString() == "eof", "Clean EOF lost");
+        foreach (var count in new[]{0,3,15})
+        {
+            using var stream = new PrefixWaitStream([..metadata, ..key[..count]]);
+            var partial = new ScrcpyVideoReader(stream);
+            await partial.Header(default, dummyAlreadyRead:true);
+            using var cancel = new CancellationTokenSource();
+            var waiting = partial.Packet(cancel.Token);
+            await stream.Waiting.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            p = Progress(partial);
+            Check(p.GetProperty("Stage").GetString() == (count < 12 ? "packet-header" : "packet-body") && p.GetProperty("StageBytes").GetInt32() == (count < 12 ? count : count - 12) && p.GetProperty("StageExpectedBytes").GetInt32() == (count < 12 ? 12 : 4) && p.GetProperty("WireBytes").GetInt64() == 76 + count && p.GetProperty("Outcome").GetString() == "reading", "Waiting partial packet position lost");
+            cancel.Cancel();
+            try { await waiting.WaitAsync(TimeSpan.FromSeconds(2)); throw new Exception("Cancellation accepted as packet"); }
+            catch (OperationCanceledException) when (cancel.IsCancellationRequested) {}
+            p = Progress(partial);
+            Check(p.GetProperty("Outcome").GetString() == "cancelled" && p.GetProperty("KeyPackets").GetInt64() == 0 && p.GetProperty("WireBytes").GetInt64() == 76 + count, "Cancellation lost consumed bytes or manufactured complete packet");
+        }
+        foreach (var count in new[]{0,67,75})
+        {
+            using var stream = new PrefixWaitStream(metadata[..count]);
+            var partial = new ScrcpyVideoReader(stream); using var cancel = new CancellationTokenSource();
+            var waiting = partial.Header(cancel.Token, dummyAlreadyRead:true);
+            await stream.Waiting.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            p = Progress(partial);
+            Check(p.GetProperty("Stage").GetString() == (count < 64 ? "device-name" : "metadata") && p.GetProperty("StageBytes").GetInt32() == (count < 64 ? count : count - 64) && p.GetProperty("WireBytes").GetInt64() == count && !p.GetProperty("MetadataComplete").GetBoolean(), "Partial metadata became ready or lost consumed bytes");
+            cancel.Cancel();
+            try { await waiting.WaitAsync(TimeSpan.FromSeconds(2)); throw new Exception("Partial metadata cancellation accepted"); }
+            catch (OperationCanceledException) when (cancel.IsCancellationRequested) {}
+            Check(Progress(partial).GetProperty("Outcome").GetString() == "cancelled", "Partial metadata cancellation lost");
+        }
+        var truncated = new ScrcpyVideoReader(new FragmentStream([..metadata, ..key[..14]]));
+        await truncated.Header(default, dummyAlreadyRead:true);
+        try { await truncated.Packet(default); throw new Exception("Truncated body accepted"); } catch (EndOfStreamException) {}
+        p = Progress(truncated);
+        Check(p.GetProperty("Outcome").GetString() == "failed" && p.GetProperty("Stage").GetString() == "packet-body" && p.GetProperty("StageBytes").GetInt32() == 2 && p.GetProperty("KeyPackets").GetInt64() == 0, "Truncation progress/complete-packet distinction lost");
+        Console.WriteLine("PASS raw reader in-memory metadata, no packet bytes, partial header/body, cancellation, config/key/delta, opaque PTS, host UTC and EOF/truncation progress; no listener/device");
+    }
+    sealed class PrefixWaitStream(byte[] bytes):MemoryStream(bytes)
+    {
+        public TaskCompletionSource Waiting { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer,CancellationToken ct=default)
+        {
+            if (Position < Length) return await base.ReadAsync(buffer[..Math.Min(3,buffer.Length)],ct);
+            Waiting.TrySetResult(); await Task.Delay(Timeout.Infinite,ct); return 0;
+        }
     }
     static async Task LifetimeControls()
     {

@@ -277,6 +277,31 @@ then separately select Connect once. A stale document or absent host PID does
 not substitute for that retirement evidence. Original source05/capture evidence
 stays unchanged; packet counters cannot retrospectively identify its failure.
 
+For the standalone scrcpy raw capture, authenticated `GET /api/captures` adds
+`rawRead` on the existing status row (null for other producer paths). This is a
+constant-size host observation: stage/outcome, bytes consumed in that stage,
+expected stage bytes, total reader wire bytes, metadata completion, complete
+config/key/delta counts, first/last host packet receipt UTC and the last complete
+non-config packet's opaque masked PTS as an exact invariant decimal string/null.
+Counters saturate rather than wrap.
+Wire bytes include metadata and packet headers/bodies, but exclude the dummy
+byte already consumed by startup. No packet payloads are retained by these facts.
+
+Metadata readiness alone leaves all packet counters zero. A `packet-header`
+stage with zero bytes means no bytes of the next packet have been consumed;
+nonzero header bytes or an incomplete `packet-body` identify partial reads.
+Only a fully read valid packet increments one config/key/delta count. Outcome
+`reading`, `ready`, `eof`, `cancelled` or `failed` describes the reader; cancellation
+and failure preserve the last stage and partial byte position. No next read has
+begun while a ready snapshot remains at metadata or a completed packet body.
+The existing video-ready, stop/close-observed, capture-failed, child-wait HELD
+and terminal evidence details also carry `rawRead`, including normal EOF.
+These facts do not prove fanout delivery, decoding, encoder progress or server
+retirement. Host UTC is receipt time only; PTS is never compared with the host
+clock. Stop ordering, guards, control=false and actual retirement requirements
+remain unchanged. In-memory fixtures cover fragmentation, partial cancellation,
+truncated input and complete packet accounting; they do not qualify a headset.
+
 Run `dotnet run --project src/QuestMultiStream.Browser` and open the printed localhost URL. Without a selection, the host performs no ADB operations. A local video file tests source/crop controls; explicit window sharing is a manual fallback. The viewer needs a WebCodecs-capable browser, no client installation. The PC host needs .NET 10, ADB and the matching scrcpy 3.3.4 server.
 
 The direct route reads H.264 scrcpy packets into WebCodecs over a localhost WebSocket. It reuses the Core display/crop launch profile and the app's eye crop/black fallback constants. The stereo blend is unaligned; it does not reproduce the desktop alignment estimator. Crops in the viewer change only drawing. No audio or input control socket is created.
