@@ -8,6 +8,9 @@ using System.Text.Json;
 using QuestMultiStream.Browser;
 
 if (args.Contains("--self-test")) { await SelfTests.Run(); return; }
+if (args.Contains("--owner-v2-self-test")) { await OwnerV2Tests.Run(); return; }
+if (args.Contains("--owner-v2-fixture")) { await OwnerV2Tests.ServeFixture(); return; }
+if (args.Length is 2 or 3&&args[0]=="--owner-v2-read-test") { await OwnerV2Tests.ReadWire(args[1],args.Length==3?args[2]:null); return; }
 if(args.Contains("--native-square-self-test")){await NativeSquareCaptureTests.Run(args.Length>=2?args[1]:null,args.Length==3?args[2]:null);return;}
 if(args.Contains("--owner-auth-self-test")){await OwnedCandidateTests.AuthTest();return;}
 if(args.Contains("--capture-owner-self-test")){await CaptureOwnerTests.Run();return;}
@@ -107,7 +110,8 @@ _ = Task.Run(async () => { try { await Task.Delay(Timeout.Infinite, operatorStop
 app.UseWebSockets(); app.UseDefaultFiles(); app.UseStaticFiles();
 if(captureWire is not null)app.MapMethods("/api/owner/{**capturePath}",["GET","POST"],captureWire.Handle);
 bool Authorized(HttpContext c) => CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(c.Request.Query["token"].ToString()), Encoding.ASCII.GetBytes(token));
-app.MapGet("/api/sources", (HttpContext c) => Authorized(c) ? Results.Json(owned is not null?owned.Sources.Select(s=>(object)new{id=s.SourceId,s.Label,displayId=0,crop=(string?)null,s.DeviceId,sourceKind="owned-rmanvid1-v1",captureModes=CaptureModes(s.SourceId)}):selection?.Sources.Select(s => new {s.Id, s.Label, s.DisplayId, s.Crop,captureModes=CaptureModes(s.Id)}) ?? []) : Results.Unauthorized());
+OwnerV2Routes.Map(app,hubBridge,Authorized,()=>origin,ownerAdmission,()=>{lock(sync)return busy.Count==0;});
+app.MapGet("/api/sources", (HttpContext c) => Authorized(c) ? Results.Json(owned is not null?owned.Sources.Select(s=>(object)new{id=s.SourceId,s.Label,displayId=0,crop=(string?)null,s.DeviceId,sourceKind="owned-rmanvid1-v1",captureModes=CaptureModes(s.SourceId)}):selection?.Sources.Select(s => new {s.Id, s.Label, s.DisplayId, s.Crop,deviceId=s.Canonical,captureModes=CaptureModes(s.Id)}) ?? []) : Results.Unauthorized());
 app.MapGet("/api/fixture", (HttpContext c) => Authorized(c) ? Results.Json(new { available = fixture is not null }) : Results.Unauthorized());
 app.MapGet("/api/hub/session", (HttpContext c) => Authorized(c) ? Results.Json(HubControl.SessionStatus(sessionProjection)) : Results.Unauthorized());
 app.MapGet("/api/captures", (HttpContext c) => {
@@ -186,7 +190,7 @@ app.MapGet("/observe/{id}",async (HttpContext c,string id)=>{
     } finally {stop.Cancel();if(receive is not null)await receive;}
 });
 app.MapGet("/api/hub", (HttpContext c) => Authorized(c) ? Results.Json(hub.Status(DateTimeOffset.UtcNow,hubBridge is not null,hubBridge?.Actions)) : Results.Unauthorized());
-app.MapGet("/api/hub/capabilities", (HttpContext c) => Authorized(c) ? Results.Json(new { bridgeSelected = hubBridge is not null, liveSupported=hubBridge?.LiveSupported==true, readOnlySession = sessionProjection is not null, direction = "both", actions=sessionProjection is not null?Array.Empty<string>():hubBridge?.Actions??["establish","disconnect"],execution = "Owner must authenticate live authority; selection alone proves no readiness" }) : Results.Unauthorized());
+app.MapGet("/api/hub/capabilities", (HttpContext c) => Authorized(c) ? Results.Json(new { bridgeSelected = hubBridge is not null, protocolVersion=hubBridge?.ProtocolVersion??1, liveSupported=hubBridge?.LiveSupported==true, readOnlySession = sessionProjection is not null, direction = "both", actions=sessionProjection is not null?Array.Empty<string>():hubBridge?.Actions??["establish","disconnect"],execution = "Owner must authenticate live authority; selection alone proves no readiness" }) : Results.Unauthorized());
 app.MapGet("/api/hub/current",async(HttpContext c)=>{if(!Authorized(c))return Results.Unauthorized();try{return Results.Json(await (hubBridge??throw new InvalidDataException()).Current(),OwnerJson.Options);}catch{return Results.Json(new{error="Current owner unavailable; do not infer stopped"},statusCode:503);}});
 app.MapGet("/api/hub/devices",async(HttpContext c)=>{if(!Authorized(c))return Results.Unauthorized();try{return Results.Json(await (hubBridge??throw new InvalidDataException()).Devices(),OwnerJson.Options);}catch{return Results.Json(new{error="Device inventory unavailable"},statusCode:503);}});
 app.MapPost("/api/hub/selection",async(HttpContext c)=>{

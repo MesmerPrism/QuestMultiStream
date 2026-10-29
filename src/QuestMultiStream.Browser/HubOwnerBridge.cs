@@ -5,13 +5,13 @@ using System.Security.Cryptography;
 
 namespace QuestMultiStream.Browser;
 
-public sealed record HubBridgeSelection(string Endpoint, string Token, string Generation, string Session,string[]? Actions=null,string? OwnerEpoch=null);
+public sealed record HubBridgeSelection(string Endpoint, string Token, string Generation, string Session,string[]? Actions=null,string? OwnerEpoch=null,int ProtocolVersion=1);
 public sealed record HubOwnerReadback(string State, string RequestId, string Generation, string Session,
     string Receipt, bool ActualEffectsCompleted,string? ActualNativeSession=null);
 
 // HTTP only transports closed owner requests. The selected owner retains guards,
 // signature checks, admission/renewal single-flight and actual subprocess ownership.
-public sealed class HubOwnerBridge : IDisposable
+public sealed partial class HubOwnerBridge : IDisposable
 {
     private HubBridgeSelection selection;
     private readonly HttpClient client;
@@ -21,6 +21,7 @@ public sealed class HubOwnerBridge : IDisposable
     private long lastRevision=-1;
     public string[] Actions=>selection.Actions??["establish","disconnect"];
     public bool LiveSupported=>selection.OwnerEpoch is not null;
+    public int ProtocolVersion=>selection.ProtocolVersion;
     internal bool UsesSecret(string key)=>selection.Token==key;
     public HubOwnerBridge(string path):this(path,null){}
     internal HubOwnerBridge(string path,HttpMessageHandler? transport) {
@@ -36,8 +37,10 @@ public sealed class HubOwnerBridge : IDisposable
         if(selection.OwnerEpoch is null)client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", selection.Token);
         if(Actions.Length is <1 or >2||Actions.Distinct().Count()!=Actions.Length||Actions.Any(action=>action is not "establish" and not "disconnect"))throw new InvalidDataException("Closed selected owner action inventory required");
         if(selection.OwnerEpoch is {} epoch&&(!System.Text.RegularExpressions.Regex.IsMatch(epoch,"^[a-zA-Z0-9._-]{1,128}$")||!System.Text.RegularExpressions.Regex.IsMatch(selection.Token,"^[a-zA-Z0-9_-]{43,256}$")))throw new InvalidDataException("Live owner epoch and strong token encoding required");
+        if(selection.ProtocolVersion is not (1 or 2)||selection.ProtocolVersion==2&&!LiveSupported)throw new InvalidDataException("Explicit supported authenticated protocol required");
     }
     public Task<HubOwnerReadback> Execute(HubAction request) {
+        if(ProtocolVersion!=1)throw new InvalidDataException("v1 action requires selected v1 protocol");
         if (!request.Execute || !Actions.Contains(request.Action) || request.Direction != "both" ||
             request.Generation != selection.Generation || !Guid.TryParseExact(request.RequestId,"D",out _)) throw new InvalidDataException("Closed bilateral owner action/selection required");
         lock (sync) {
@@ -55,6 +58,7 @@ public sealed class HubOwnerBridge : IDisposable
         return ValidateReadback(await Exchange<HubOwnerReadback>(HttpMethod.Post,"",body),request.RequestId);
     }
     public async Task<HubOwnerReadback> Status(string requestId) {
+        if(ProtocolVersion!=1)throw new InvalidDataException("v1 result requires selected v1 protocol");
         if (!Guid.TryParseExact(requestId,"D",out _)) throw new InvalidDataException("Canonical owner request ID required");
         return ValidateReadback(await Exchange<HubOwnerReadback>(HttpMethod.Get,"/"+requestId,[]),requestId);
     }
@@ -89,16 +93,19 @@ public sealed class HubOwnerBridge : IDisposable
         return OwnerJson.Read<T>(bytes);
     }
     public async Task<OwnerLiveStatus> Current() {
+        if(ProtocolVersion!=1)throw new InvalidDataException("v1 status requires selected v1 protocol");
         if(!LiveSupported)throw new InvalidDataException("Live status not selected");
         var status=await Exchange<OwnerLiveStatus>(HttpMethod.Get,"/status",[]);status.Validate(selection.OwnerEpoch!,DateTimeOffset.UtcNow);
         Bind(status);
         return status;
     }
     public async Task<OwnerDevices> Devices() {
+        if(ProtocolVersion!=1)throw new InvalidDataException("v1 inventory requires selected v1 protocol");
         if(!LiveSupported)throw new InvalidDataException("Live inventory not selected");
         var result=await Exchange<OwnerDevices>(HttpMethod.Get,"/devices",[]);result.Validate(selection.OwnerEpoch!,DateTimeOffset.UtcNow);return result;
     }
     public async Task<OwnerLiveStatus> Select(OwnerSelectionRequest request) {
+        if(ProtocolVersion!=1)throw new InvalidDataException("v1 selection requires selected v1 protocol");
         if(!LiveSupported||request.Schema!="questms.owner.selection.v1"||request.OwnerEpoch!=selection.OwnerEpoch||!Guid.TryParseExact(request.RequestId,"D",out _)||request.ExpectedRevision<0||request.Members is null||request.Members.Length!=2||request.Members.Any(m=>m is null)||!request.Members.Select(m=>m.Role).Order().SequenceEqual(new[]{"Q","W"})||request.Members.Any(m=>string.IsNullOrWhiteSpace(m.DeviceId))||request.Members.Select(m=>m.DeviceId).Distinct().Count()!=2)throw new InvalidDataException("Closed distinct pair selection required");
         var result=await Exchange<OwnerLiveStatus>(HttpMethod.Post,"/selection",JsonSerializer.SerializeToUtf8Bytes(request,OwnerJson.Options));result.Validate(selection.OwnerEpoch!,DateTimeOffset.UtcNow);
         if(!result.Selection.Members.OrderBy(m=>m.Role).SequenceEqual(request.Members.OrderBy(m=>m.Role)))throw new InvalidDataException("Selected pair differs");

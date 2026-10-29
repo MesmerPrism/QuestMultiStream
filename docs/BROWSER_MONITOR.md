@@ -1,3 +1,56 @@
+# Additive bilateral owner v2 controls
+
+An explicit host-only bridge selection with `protocolVersion: 2` uses
+the existing authenticated HMAC transport and the separate
+`/operator/v2/*` contract in [BROWSER_CONTROL_V2.md](BROWSER_CONTROL_V2.md).
+Omitting that option retains the v1 behavior. The browser uses separate
+`/api/hub/v2/*` routes; it never downgrades v2 to v1 or sends a v1 action
+through a selected v2 bridge. The legacy `generation` and `session` bridge
+configuration fields remain local transport metadata, never actual native
+or app session identities.
+
+The maintained private Morphovision Controller owns NewRun, actual offered
+ResumeRun, bilateral choreography, Originals, mode changes, normal Stop and
+the genuine two-peer Stop barrier before Whole. The earlier selected-factory
+Source13 route is not a supported current NewRun provider. This public
+adapter introduces no SDK owner, command interpreter or device worker.
+
+The page requires a New run / Resume run choice and Own / Peer / Blend mode.
+Only actual owner run choices are available for Resume. Both headset rows
+show their own mode and native report state. App session state alone does not
+certify advancing app video. Numeric app/native generations stay decimal
+strings; native executor generation and ARM native process generation have
+separate fields. Opaque process epochs, native sessions, config identities,
+run identities and receipts appear in Diagnostics.
+
+An explicit action is retained in session storage before POST. A lost reply
+keeps the same request ID across reload and polls only GET. Effective results
+require completed effects with actual Q/W result identities. The first facade
+advertises no action readiness while another action is running or unresolved;
+normal Stop is a separate intent after the current action settles. Uncertain
+pair selection also survives reload and needs an explicit current-status check.
+No timer resets, replays or restarts an app.
+
+Start mirror, Stop mirror and Disconnect viewer remain separate controls.
+Disconnect viewer changes only the observer; refreshing the page's status
+does not reconnect an explicitly disconnected observer. Connect viewer can
+reattach to the same producer without dispatching a capture or product action.
+Raw selected capture sources expose their canonical device ID for exact
+selected-peer matching. Loading the hub starts no capture or app action.
+
+Run `tools/Test-BrowserOwnerV2.ps1` for the strict DTO/parser, production
+HTTP routes, exact-path HMAC, retained timeout/replay and real UI callback
+controls. `--owner-v2-read-test <absolute-private-bridge.json> [request-UUID]`
+checks capabilities, devices, status, run choices and optional original result
+using GET only. It dispatches no action. `--owner-v2-fixture`, run from the
+Browser project directory, serves a modeled owner on an ephemeral loopback
+port for rendered desktop/mobile QA; it creates no capture or device worker.
+That explicit fixture alone exposes `POST /fixture-stop` for clean shutdown.
+
+These source/host controls and modeled-provider cross-owner checks establish
+wire and UI integration. Live selected-owner adoption, real headset effects,
+decoded screen mirrors and app peer video remain separate acceptance evidence.
+
 # Two-headset browser control hub successor
 
 ## Read-only member session evidence

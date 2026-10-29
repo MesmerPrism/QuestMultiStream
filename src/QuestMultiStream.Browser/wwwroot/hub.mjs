@@ -1,14 +1,15 @@
 import {renderSession} from './session-view.mjs';
 import {mountLiveOwner} from './live-owner.mjs';
+import {mountBilateralOwner} from './bilateral-owner.mjs';
 import {captureModeLabel} from './capture-mode.mjs';
 const $=id=>document.getElementById(id);
 const sourceIds=new URLSearchParams(location.search);
 const token=new URLSearchParams(location.hash.slice(1)).get('token')??sessionStorage.getItem('questms-local-token')??'';
 if(token)sessionStorage.setItem('questms-local-token',token);history.replaceState(null,'',location.pathname);
-let generation=null,inflight=false,observations=[],prepared=null,bridgeSelected=false,sessionReadOnly=false,activeRequest=null,refreshing=false,liveSupported=false,liveActions=[];
+let generation=null,inflight=false,observations=[],prepared=null,bridgeSelected=false,sessionReadOnly=false,activeRequest=null,refreshing=false,liveSupported=false,liveActions=[],protocolVersion=1;
 const api=path=>path+'?token='+encodeURIComponent(token);
-try{const response=await fetch(api('/api/hub/capabilities'));if(response.ok){const caps=await response.json();liveSupported=caps.liveSupported===true;liveActions=Array.isArray(caps.actions)?caps.actions:[];bridgeSelected=caps.bridgeSelected;sessionReadOnly=caps.readOnlySession===true;if(sessionReadOnly){$('actionForm').hidden=true;$('actionResult').textContent='Read-only session mode: pair actions unavailable.';}if(bridgeSelected&&caps.actions)for(const option of [...$('action').options])if(!caps.actions.includes(option.value))option.remove();}}catch{}
-if(liveSupported){await mountLiveOwner({document,storage:sessionStorage,token,actions:liveActions,call:async(path,options={})=>{const response=await fetch(api(path),{cache:'no-store',...options,headers:{'Content-Type':'application/json',...options.headers}});const result=await response.json();if(!response.ok)throw Error(result.error??'Owner request unavailable');return result;}});}else{
+try{const response=await fetch(api('/api/hub/capabilities'));if(response.ok){const caps=await response.json();liveSupported=caps.liveSupported===true;protocolVersion=caps.protocolVersion??1;liveActions=Array.isArray(caps.actions)?caps.actions:[];bridgeSelected=caps.bridgeSelected;sessionReadOnly=caps.readOnlySession===true;if(sessionReadOnly){$('actionForm').hidden=true;$('actionResult').textContent='Read-only session mode: pair actions unavailable.';}if(protocolVersion===1&&bridgeSelected&&caps.actions)for(const option of [...$('action').options])if(!caps.actions.includes(option.value))option.remove();}}catch{}
+if(liveSupported){await (protocolVersion===2?mountBilateralOwner:mountLiveOwner)({document,storage:sessionStorage,token,actions:liveActions,call:async(path,options={})=>{const response=await fetch(api(path),{cache:'no-store',...options,headers:{'Content-Type':'application/json',...options.headers}});const result=await response.json();if(!response.ok)throw Error(result.error??'Owner request unavailable');return result;}});}else{
 for(const role of ['Q','W'])$('captureMode'+role).parentElement.hidden=true;
 $('controller').textContent=bridgeSelected?'Controller selected · checking its readiness':'Controller unavailable';
 $('execute').textContent=bridgeSelected?'Prepare request first':'Controller unavailable';
