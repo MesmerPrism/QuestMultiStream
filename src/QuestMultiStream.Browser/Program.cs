@@ -116,9 +116,9 @@ app.MapGet("/api/fixture", (HttpContext c) => Authorized(c) ? Results.Json(new {
 app.MapGet("/api/hub/session", (HttpContext c) => Authorized(c) ? Results.Json(HubControl.SessionStatus(sessionProjection)) : Results.Unauthorized());
 app.MapGet("/api/captures", (HttpContext c) => {
     if(!Authorized(c))return Results.Unauthorized();
-    (string Id,string State,bool Held,string? Mode)[] snapshot;
-    lock(sync)snapshot=captureStates.Select(pair=>(pair.Key,pair.Value,busy.Contains(pair.Key),captureModes.GetValueOrDefault(pair.Key))).ToArray();
-    return Results.Json(snapshot.Select(row=>new{id=row.Id,state=row.State,retirementPending=row.Held,captureMode=captureOwner is null?row.Mode:((captureOwner.Current(row.Id).Body as CaptureCurrent)?.Operation is {} operation?operation.Mode??NativeCaptureSelection.Raw:null)}).ToArray());
+    (string Id,string State,bool Held,string? Mode,ScrcpyReadSnapshot? RawRead)[] snapshot;
+    lock(sync)snapshot=captureStates.Select(pair=>(pair.Key,pair.Value,busy.Contains(pair.Key),captureModes.GetValueOrDefault(pair.Key),fanouts.GetValueOrDefault(pair.Key)?.RawReadProgress?.Snapshot())).ToArray();
+    return Results.Json(snapshot.Select(row=>new{id=row.Id,state=row.State,retirementPending=row.Held,captureMode=captureOwner is null?row.Mode:((captureOwner.Current(row.Id).Body as CaptureCurrent)?.Operation is {} operation?operation.Mode??NativeCaptureSelection.Raw:null),rawRead=row.RawRead}).ToArray());
 });
 app.MapPost("/api/captures/{id}/{action}", async (HttpContext c,string id,string action) => {
     if(!Authorized(c)||c.Request.Headers.Origin!=origin)return Results.Unauthorized();
@@ -263,6 +263,7 @@ static async Task Capture(WebSocket? socket, HostSelection config, SourceSelecti
     var scid = RandomNumberGenerator.GetInt32(1, int.MaxValue).ToString("x8");
     var remote = "/data/local/tmp/questms-browser-" + scid + ".jar";
     var evidence = new CaptureEvidence(config.EvidenceDirectory, "capture-" + scid);
+    var rawRead = new ScrcpyReadProgress(); fanout.RawReadProgress = rawRead;
     evidence.Event("intent", new { source, remote, config.DeadlineUtc, config.DaemonPid, config.DaemonStartUtcTicks, config.AdbSha256, config.ServerSha256, config.CaptureLifetime });
     Process? child = null; Task<DrainResult>? output = null, error = null;
     TcpClient? tcp = null; var forwarded = false; var pushed = false;
@@ -293,8 +294,8 @@ static async Task Capture(WebSocket? socket, HostSelection config, SourceSelecti
             catch (Exception e) { failure = e; deadline.Cancel(); }
         });
         tcp = await ScrcpyStartup.Connect(source.ForwardPort, () => child.HasExited, deadline.Token, s => evidence.SafeEvent("startup", s));
-        var reader = new ScrcpyVideoReader(tcp.GetStream()); var size = await reader.Header(deadline.Token, dummyAlreadyRead: true);
-        evidence.SafeEvent("video-ready", new { size.Width, size.Height });
+        var reader = new ScrcpyVideoReader(tcp.GetStream(), rawRead); var size = await reader.Header(deadline.Token, dummyAlreadyRead: true);
+        evidence.SafeEvent("video-ready", new { size.Width, size.Height, rawRead = rawRead.Snapshot() });
         var metadata=new {kind="video",size.Width,size.Height,codec="h264",captureMode=NativeCaptureSelection.Raw,frameLayout="stereo-sbs"};fanout.SetMetadata(metadata);
         if(socket is not null)await socket.SendAsync(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(metadata)), WebSocketMessageType.Text, true, deadline.Token);
         while (socket is null || socket.State == WebSocketState.Open)
@@ -304,9 +305,9 @@ static async Task Capture(WebSocket? socket, HostSelection config, SourceSelecti
             if(socket is not null)await socket.SendAsync(packet, WebSocketMessageType.Binary, true, deadline.Token);
         }
     }
-    catch (OperationCanceledException) when (MonitorLifetime.OperatorStopWithinScope(operatorStop.IsCancellationRequested, config.DeadlineUtc, DateTimeOffset.UtcNow) && failure is null) { evidence.SafeEvent("operator-stop-observed"); }
-    catch (OperationCanceledException) when (browserClosed && failure is null) { evidence.SafeEvent("browser-close-observed"); }
-    catch (Exception e) { failure ??= e; evidence.SafeEvent("capture-failed", new { type = e.GetType().Name, e.Message }); }
+    catch (OperationCanceledException) when (MonitorLifetime.OperatorStopWithinScope(operatorStop.IsCancellationRequested, config.DeadlineUtc, DateTimeOffset.UtcNow) && failure is null) { evidence.SafeEvent("operator-stop-observed", new { rawRead = rawRead.Snapshot() }); }
+    catch (OperationCanceledException) when (browserClosed && failure is null) { evidence.SafeEvent("browser-close-observed", new { rawRead = rawRead.Snapshot() }); }
+    catch (Exception e) { failure ??= e; evidence.SafeEvent("capture-failed", new { type = e.GetType().Name, e.Message, rawRead = rawRead.Snapshot() }); }
     finally
     {
         tcp?.Dispose();
@@ -316,7 +317,7 @@ static async Task Capture(WebSocket? socket, HostSelection config, SourceSelecti
         if (monitor is not null) await monitor;
         if (child is not null)
         {
-            if (!child.HasExited) evidence.SafeEvent("HELD", new { pid = child.Id, reason = "Awaiting actual server child exit; source locks retained; no kill/replay" });
+            if (!child.HasExited) evidence.SafeEvent("HELD", new { pid = child.Id, reason = "Awaiting actual server child exit; source locks retained; no kill/replay", rawRead = rawRead.Snapshot() });
             await child.WaitForExitAsync(); // Uncertain original child keeps SAME invocation and source ownership.
             DrainResult stdout, stderr;
             try { stdout = await output!; stderr = await error!; }
@@ -334,7 +335,7 @@ static async Task Capture(WebSocket? socket, HostSelection config, SourceSelecti
             catch (Exception e) {cleanupUnknown=true; failure ??= e; evidence.SafeEvent("jar-cleanup-failed", e.Message); }
         if (evidence.Errors.Count > 0) failure ??= new IOException("Stage evidence retention failed");
         if(cleanupUnknown||evidence.Errors.Count>0){evidence.SafeEvent("HELD",new {reason="Owned cleanup/retained evidence unproven; same invocation/tool locks retained; no kill/replay"});await Task.Delay(Timeout.Infinite);}
-        evidence.SafeEvent("terminal", new { success = failure is null, failure = failure?.Message, evidence_errors = evidence.Errors });
+        evidence.SafeEvent("terminal", new { success = failure is null, failure = failure?.Message, evidence_errors = evidence.Errors, rawRead = rawRead.Snapshot() });
         if (evidence.Errors.Count > 0) failure ??= new IOException("Stage evidence retention failed");
         if (socket?.State is WebSocketState.Open or WebSocketState.CloseReceived) await socket.CloseOutputAsync(failure is null ? WebSocketCloseStatus.NormalClosure : WebSocketCloseStatus.InternalServerError, failure is null ? "Selected capture ended" : "Capture failed; inspect retained host evidence", CancellationToken.None);
     }
