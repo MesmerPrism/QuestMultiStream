@@ -244,7 +244,7 @@ app.MapGet("/stream/{id}", async (HttpContext context, string id) =>
     finally { lock(sync){busy.Remove(id);captureStops.Remove(id);captureStates[id]="retired";} }
 });
 Console.WriteLine($"Browser viewer: {origin}/#token={token}");
-Console.WriteLine(selection is null ? "OFFLINE: file/window fallback only; no ADB/device operations" : "Explicit selected device capture; no controls, audio, wake or retries");
+Console.WriteLine(selection is null ? "OFFLINE: file/window fallback only; no ADB/device operations" : "Explicit selected device capture; lifecycle EOF only, no input events, audio, wake or retries");
 if(hostEnd is not null) _ = Task.Run(async()=>{
     await Task.Delay(hostEnd.Value-DateTimeOffset.UtcNow);
     while(true){lock(sync){if(busy.Count==0){app.Lifetime.StopApplication();return;}}
@@ -266,7 +266,7 @@ static async Task Capture(WebSocket? socket, HostSelection config, SourceSelecti
     var rawRead = new ScrcpyReadProgress(); fanout.RawReadProgress = rawRead;
     evidence.Event("intent", new { source, remote, config.DeadlineUtc, config.DaemonPid, config.DaemonStartUtcTicks, config.AdbSha256, config.ServerSha256, config.CaptureLifetime });
     Process? child = null; Task<DrainResult>? output = null, error = null;
-    TcpClient? tcp = null; var forwarded = false; var pushed = false;
+    ScrcpyConnection? tcp = null; var forwarded = false; var pushed = false;
     Exception? failure = null;
     using var deadline = MonitorLifetime.CaptureCancellation(config.DeadlineUtc, operatorStop);
     Task? monitor = null;
