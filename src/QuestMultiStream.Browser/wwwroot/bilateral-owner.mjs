@@ -40,7 +40,7 @@ export class BilateralController{
 }
 export async function mountBilateralOwner({document,call,storage,token}){
  const $=id=>document.getElementById(id),controller=new BilateralController(call,storage);
- let current=null,inventory=null,runs=null,runInventoryStamp=null,prepared=null,busy=false,refreshing=false,sources=[],captures=[],selectionIntent=null;
+ let current=null,inventory=null,runs=null,runInventoryStamp=null,prepared=null,busy=false,refreshingOwner=false,refreshingMirrors=false,sources=[],captures=[],selectionIntent=null;
  const disconnectedObservers=new Set();
  try{selectionIntent=JSON.parse(storage.getItem('questms-owner-v2-selection'));}catch{}
  $('pairSelection').hidden=false;$('runControls').hidden=false;$('sessionTitle').textContent='App session';$('refreshSession').textContent='Refresh status';
@@ -74,10 +74,11 @@ export async function mountBilateralOwner({document,call,storage,token}){
   $('displayState'+role).textContent='Mirror: '+(capture?.state??'not started')+(capture?.captureMode?' · '+captureModeLabel(capture.captureMode):'');
   $('startDisplay'+role).disabled=!source||capture?.retirementPending===true||['requested','connected','unknown','stopping'].includes(capture?.state);
   $('stopDisplay'+role).disabled=!source||capture?.retirementPending!==true||capture.state==='unknown';
-  if(source&&!disconnectedObservers.has(role)&&['requested','connected'].includes(capture?.state)){if(feed.dataset.source!==source.id){feed.dataset.source=source.id;feed.src='viewer.html?pane='+role+'&observe=1&source='+encodeURIComponent(source.id)+'#token='+encodeURIComponent(token);}}
+  feed.hidden=!(source&&!disconnectedObservers.has(role)&&['requested','connected'].includes(capture?.state));
+  if(!feed.hidden){if(feed.dataset.source!==source.id){feed.dataset.source=source.id;feed.src='viewer.html?pane='+role+'&observe=1&source='+encodeURIComponent(source.id)+'#token='+encodeURIComponent(token);}}
   else if(feed.dataset.source){delete feed.dataset.source;feed.src='about:blank';}
  }}
- async function refresh(){if(refreshing)return;refreshing=true;
+ async function refreshOwner(){if(refreshingOwner)return;refreshingOwner=true;
   try{if(controller.pending){try{const value=await controller.reconcile();say('Original request '+value.state+(value.actualEffectsCompleted?' · both headsets completed':' · completion unconfirmed'));}catch{say('Original outcome unknown · request retained; no retry');}}
    current=await call('/api/hub/v2/status');
    try{
@@ -91,9 +92,13 @@ export async function mountBilateralOwner({document,call,storage,token}){
    }catch{runs=null;}
    render();
   }catch{current=null;prepared=null;render();}
-  try{sources=await call('/api/sources');captures=await call('/api/captures');renderMirrors();}catch{sources=[];for(const role of ['Q','W']){$('displayState'+role).textContent='Mirror status unavailable';$('startDisplay'+role).disabled=true;$('stopDisplay'+role).disabled=true;}}
-  finally{refreshing=false;}
+  finally{refreshingOwner=false;}
  }
+ async function refreshMirrors(){if(refreshingMirrors)return;refreshingMirrors=true;
+  try{[sources,captures]=await Promise.all([call('/api/sources'),call('/api/captures')]);renderMirrors();}catch{sources=[];for(const role of ['Q','W']){$('displayState'+role).textContent='Mirror status unavailable';$('startDisplay'+role).disabled=true;$('stopDisplay'+role).disabled=true;}}
+  finally{refreshingMirrors=false;}
+ }
+ async function refresh(){await Promise.all([refreshOwner(),refreshMirrors()]);}
  async function devices(){try{inventory=await call('/api/hub/v2/devices');for(const role of ['Q','W']){const select=$('device'+role),previous=select.value;select.replaceChildren();for(const device of inventory.devices){const option=document.createElement('option');option.value=device.deviceId;option.textContent=device.label+(device.ready?'':' · unavailable');option.disabled=!device.ready;select.append(option);}if([...select.options].some(o=>o.value===previous))select.value=previous;}if($('deviceW').value===$('deviceQ').value&&$('deviceW').options.length>1)$('deviceW').value=$('deviceW').options[1].value;}catch{inventory=null;}controls();}
  $('refreshDevices').onclick=devices;
  $('selectPair').onclick=async()=>{
@@ -112,7 +117,7 @@ export async function mountBilateralOwner({document,call,storage,token}){
   for(const action of ['start','stop']){const button=$(action+'Display'+role);button.hidden=false;button.textContent=action==='start'?'Start mirror':'Stop mirror';button.onclick=async()=>{const source=sourceFor(role);if(!source)return;button.disabled=true;try{const body={requestId:crypto.randomUUID()};if(action==='start')body.captureMode=$('captureMode'+role).value||'raw-two-lens';await call('/api/captures/'+encodeURIComponent(source.id)+'/'+action,{method:'POST',body:JSON.stringify(body)});}catch{$('displayState'+role).textContent='Mirror outcome unknown · inspect existing capture';}await refresh();};}
   $('disconnectDisplay'+role).hidden=false;$('disconnectDisplay'+role).onclick=()=>{
    if(disconnectedObservers.has(role)){disconnectedObservers.delete(role);$('disconnectDisplay'+role).textContent='Disconnect viewer';renderMirrors();}
-   else{disconnectedObservers.add(role);const feed=$('feed'+role);delete feed.dataset.source;feed.src='about:blank';$('disconnectDisplay'+role).textContent='Connect viewer';$('displayState'+role).textContent='Viewer disconnected · mirror producer unchanged';}
+   else{disconnectedObservers.add(role);const feed=$('feed'+role);delete feed.dataset.source;feed.src='about:blank';feed.hidden=true;$('disconnectDisplay'+role).textContent='Connect viewer';$('displayState'+role).textContent='Viewer disconnected · mirror producer unchanged';}
   };
  }
  $('refreshSession').onclick=async()=>{
@@ -122,5 +127,5 @@ export async function mountBilateralOwner({document,call,storage,token}){
   }
  };
  $('stopMonitor').onclick=async()=>{try{await call('/operator-stop',{method:'POST'});$('status').textContent='Monitor stop requested · mirror retirement pending';}catch{$('status').textContent='Monitor stop outcome unknown';}};
- await call('/api/hub/v2/capabilities');await devices();await refresh();const timer=setInterval(refresh,1000);return {refresh,dispose(){clearInterval(timer);}};
+ await call('/api/hub/v2/capabilities');await devices();const timer=setInterval(refresh,1000);await refresh();return {refresh,dispose(){clearInterval(timer);}};
 }

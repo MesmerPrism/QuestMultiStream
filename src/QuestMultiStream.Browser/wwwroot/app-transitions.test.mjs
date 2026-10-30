@@ -21,7 +21,11 @@ test('actual app callbacks recover status and preserve terminal errors/stop gene
   const frame=async(key,pts)=>liveSocket.onmessage({data:body(false,key,pts,[0,0,1,0x65])});
   await frame(true,1);assert.match(element('status').textContent,/H\.264 · Live host/);
   liveDecoder.decodeQueueSize=9;await frame(false,2);assert.match(element('status').textContent,/Waiting for next keyframe/);
-  await frame(true,3);assert.match(element('status').textContent,/H\.264 · Live host/);
+  clock+=1000;await frame(true,3);assert.match(element('status').textContent,/H\.264 · Live host/);
+  assert.match(element('metrics').textContent,/arrival max 1000 ms/);
+  const measured=JSON.parse(element('timingReport').textContent);
+  assert.equal(measured.arrival.gapsAtLeast1s,1);assert.equal(measured.canvasDraw.gapsAtLeast1s,1);
+  assert.equal(measured.scope,'screen-mirror-observer');
   clock+=5000;intervals[0]();assert.match(element('status').textContent,/No new decoded frame/);
   await frame(false,4);assert.match(element('status').textContent,/H\.264 · Live host/);
   const sameSocket=liveSocket;document.hidden=true;listeners.get('visibilitychange')();

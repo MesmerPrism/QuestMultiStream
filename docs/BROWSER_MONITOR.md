@@ -38,6 +38,30 @@ reattach to the same producer without dispatching a capture or product action.
 Raw selected capture sources expose their canonical device ID for exact
 selected-peer matching. Loading the hub starts no capture or app action.
 
+App Original readback and mirror status have independent in-flight reads. A
+slow app result does not hold either mirror's status controls behind it. Each
+read lane permits only one outstanding refresh; GET never replays an action.
+Embedded observers use the outer hub's mirror controls and retain their own
+presentation/crop controls. Inactive or explicitly disconnected panes are hidden.
+
+Each viewer's **Last mirror timing** report counts parsed non-configuration
+video packets and actual canvas draw submissions. Arrival and draw intervals
+use that viewer's `performance.now()` clock, including maximum intervals and
+counts at least one second. Producer PTS intervals are calculated separately
+within each codec configuration; no producer-to-PC latency is inferred. A
+configuration resets the PTS baseline. Hiding/showing a viewer starts a new
+visible segment, excluding intentional hidden-viewer pauses. No sample means
+unobserved, including a size header with no encoded packets. Disconnect retains
+the last report. The counters require successive samples; the first packet's
+startup wait is not a measured packet gap. UI age checks run every 250 ms, while
+gap measurements happen at packet arrival and canvas submission rather than
+through status polling. The JSON report is refreshed at most four times a second.
+
+These are screen-mirror observations. Canvas submission does not certify
+physical display presentation, and neither mirror timing nor app configuration
+ACK establishes Native peer-stream continuity. Two viewers have separate clock
+origins; compare intervals within each viewer, never subtract their timestamps.
+
 Run `tools/Test-BrowserOwnerV2.ps1` for the strict DTO/parser, production
 HTTP routes, exact-path HMAC, retained timeout/replay and real UI callback
 controls. `--owner-v2-read-test <absolute-private-bridge.json> [request-UUID]`
