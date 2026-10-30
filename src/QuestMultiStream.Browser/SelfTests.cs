@@ -114,6 +114,7 @@ internal static class SelfTests
         }
         await StartupControls();
         await NoFrameCancellationControls();
+        await PostDummyFailureControls();
         await EvidenceControls();
         await CloseControls();
         await LifetimeControls();
@@ -314,6 +315,25 @@ internal static class SelfTests
         } finally {
             scope.Cancel();listener.Stop();lifecyclePeer?.Dispose();
             if(lifecycleAccept is not null)try{(await lifecycleAccept).Dispose();}catch(OperationCanceledException){}catch(SocketException){}
+        }
+    }
+    static async Task PostDummyFailureControls()
+    {
+        using var stop=new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();
+        Task<ScrcpyConnection>? connecting=null;
+        try {
+            connecting=ScrcpyStartup.Connect(((IPEndPoint)listener.LocalEndpoint).Port,()=>false,stop.Token,_=>{});
+            using var videoPeer=await listener.AcceptTcpClientAsync(stop.Token);
+            listener.Stop(); // Existing video stays open, but the second connection must be refused.
+            await videoPeer.GetStream().WriteAsync(new byte[]{0},stop.Token);
+            try {using var unexpected=await connecting.WaitAsync(TimeSpan.FromSeconds(5));throw new Exception("Refused post-dummy lifecycle connection was accepted");}
+            catch(SocketException e) when(e.SocketErrorCode==SocketError.ConnectionRefused){}
+            catch(TimeoutException){throw new Exception("Post-dummy lifecycle failure reentered video readiness instead of propagating once");}
+            Console.WriteLine("PASS actual loopback post-dummy lifecycle refusal propagates without video readiness replay; no device");
+        } finally {
+            stop.Cancel();listener.Stop();
+            if(connecting is not null)try{(await connecting).Dispose();}catch(OperationCanceledException){}catch(SocketException){}
         }
     }
     static async Task Denied(byte[] data,bool header)

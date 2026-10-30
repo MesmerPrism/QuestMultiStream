@@ -28,7 +28,7 @@ public static class ScrcpyStartup
         {
             deadline.ThrowIfCancellationRequested();
             if (serverExited()) throw new IOException("Selected server exited before readiness");
-            var client = new TcpClient();
+            var client = new TcpClient();var dummyReady=false;
             try
             {
                 await client.ConnectAsync(IPAddress.Loopback, port, deadline);
@@ -36,6 +36,7 @@ public static class ScrcpyStartup
                 if (n == 1)
                 {
                     if (dummy[0] != 0) throw new InvalidDataException("Bad forward readiness byte");
+                    dummyReady=true;
                     // DesktopConnection v3.3.4 accepts video then control before
                     // publishing metadata. After this actual dummy byte, finish
                     // the same server's lifecycle handshake even if Stop raced
@@ -51,7 +52,7 @@ public static class ScrcpyStartup
                 }
                 observed("forward-before-listener-eof");
             }
-            catch (SocketException e) when (e.SocketErrorCode is SocketError.ConnectionRefused or SocketError.ConnectionReset)
+            catch (SocketException e) when (!dummyReady && (e.SocketErrorCode is SocketError.ConnectionRefused or SocketError.ConnectionReset))
             { observed(e.SocketErrorCode.ToString()); }
             catch { client.Dispose(); throw; }
             client.Dispose(); await Task.Delay(100, deadline);
