@@ -60,3 +60,35 @@ test('uncertain pair selection survives reload and only an explicit current-stat
   await el('refreshSession').onclick();assert.equal(retained.getItem('questms-owner-v2-selection'),null);assert.equal(calls.filter(c=>c.options?.method==='POST').length,1);panel.dispose();
  }finally{globalThis.setInterval=oldInterval;}
 });
+
+test('a pending app readback never delays independent mirror status and controls',async()=>{
+ const nodes=new Map(),oldInterval=globalThis.setInterval;globalThis.setInterval=()=>1;
+ class Element{constructor(tag){this.tag=tag;this.options=[];this.children=[];this.dataset={};this.value='';this.parentElement={};}append(e){this.children.push(e);if(e.tag==='option'){this.options.push(e);if(!this.value)this.value=e.value;}}replaceChildren(){this.children=[];this.options=[];this.value='';}}
+ const el=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);},document={getElementById:el,createElement:tag=>new Element(tag)};
+ const retained=storage(),request=makeAction(status(),'mode',null,null,'peer',requestId);
+ let releaseReadback,readbacks=0,captureReads=0,captures=[];
+ const blocked=new Promise(resolve=>releaseReadback=resolve);
+ const call=async path=>{
+  if(path.includes('/actions/')){readbacks++;await blocked;return result(request,'running');}
+  if(path.endsWith('/status'))return status();
+  if(path.endsWith('/devices'))return {ownerEpoch:'fixture',revision:1,devices:[]};
+  if(path.endsWith('/runs'))return {selectionId,revision:1,runs:[]};
+  if(path==='/api/sources')return [{id:'q',deviceId:'deviceQ'}];
+  if(path==='/api/captures'){captureReads++;return captures;}
+  return {protocolVersion:2};
+ };
+ let panel,mounting;
+ try{
+  panel=await mountBilateralOwner({document,call,storage:retained,token:'fixture'});
+  retained.setItem('questms-owner-v2-pending',JSON.stringify(request));
+  panel.dispose();
+  mounting=mountBilateralOwner({document,call,storage:retained,token:'fixture'});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(readbacks,1);assert.ok(captureReads>=2,'mirror endpoint is read while the app original remains pending');
+  assert.equal(el('startDisplayQ').disabled,false);
+  releaseReadback();panel=await mounting;
+  captures=[{id:'q',state:'stopping',retirementPending:true}];
+  await panel.refresh();assert.match(el('displayStateQ').textContent,/stopping/);
+  assert.equal(el('startDisplayQ').disabled,true);
+ }finally{releaseReadback();if(mounting)panel=await mounting;panel?.dispose();globalThis.setInterval=oldInterval;}
+});

@@ -9,6 +9,8 @@ test('actual embedded viewer reload subscribes without a producer Start; viewer 
  globalThis.history={replaceState(){}};globalThis.sessionStorage={getItem(){return null;},setItem(){}};globalThis.setInterval=()=>1;globalThis.window={VideoDecoder:true};
  globalThis.fetch=async(url,options)=>{calls.push({url,options});return{ok:true,json:async()=>url.startsWith('/api/sources')?[{id:'q',label:'Q',displayId:0}]:{available:false}};};
  globalThis.WebSocket=class{static OPEN=1;constructor(url){this.url=url;this.readyState=1;sockets.push(this);}close(){this.readyState=3;this.onclose?.();}};
- await import('./app.mjs?observer-load');assert.equal(sockets.length,1);assert.match(sockets[0].url,/\/observe\/q/);element('stop').onclick();
+ await import('./app.mjs?observer-load');assert.equal(sockets.length,1);assert.match(sockets[0].url,/\/observe\/q/);
+ for(const id of ['connect','stop','stopCapture','stopHost'])assert.equal(element(id).hidden,true,'embedded observer uses the parent control for '+id);
+ element('stop').onclick();
  nodes.clear();await import('./app.mjs?observer-reload');assert.equal(sockets.length,2);assert.match(sockets[1].url,/\/observe\/q/);assert.equal(calls.filter(c=>c.options?.method==='POST').length,0);
 });
