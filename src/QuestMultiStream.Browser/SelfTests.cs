@@ -104,7 +104,7 @@ internal static class SelfTests
         var dummy=(byte[])bytes.Clone();dummy[0]=1;await Denied(dummy,true);
         var source=new SourceSelection("fixture","Fixture","fixture","fixture","00000000-0000-0000-0000-000000000001","00000000-0000-0000-0000-000000000002",43119,2,"640:480:0:0");
         var args=HostSelection.ServerArguments(source,"12345678");
-        if(!args.Contains("display_id=2")||!args.Contains("crop=640:480:0:0")||!args.Contains("control=false")||!args.Contains("audio=false"))throw new Exception("Actual owner profile adapter failed");
+        if(!args.Contains("display_id=2")||!args.Contains("crop=640:480:0:0")||!args.Contains("control=true")||!args.Contains("audio=false")||!args.Contains("power_on=false")||!args.Contains("clipboard_autosync=false"))throw new Exception("Actual owner lifecycle-only profile adapter failed");
         var now=DateTimeOffset.UtcNow;
         foreach(var offset in new[]{-1,1})
         {
@@ -113,6 +113,7 @@ internal static class SelfTests
             if(HostSelection.LeaseMatches(doc.RootElement,source,now,now.AddSeconds(2)))throw new Exception("Capture outlives selected lease");
         }
         await StartupControls();
+        await NoFrameCancellationControls();
         await EvidenceControls();
         await CloseControls();
         await LifetimeControls();
@@ -284,6 +285,36 @@ internal static class SelfTests
         if(delayed.IsCompleted||actualScope.IsCancellationRequested)throw new Exception("Observer estimate retired a healthy waiting producer");
         await delayedPeer.GetStream().WriteAsync(new byte[]{0},actualScope.Token);using var delayedClient=await delayed;delayedListener.Stop();
         Console.WriteLine("PASS actual loopback delayed-listener readiness, exited-child and deadline denial; no server launch or device calls");
+    }
+    static async Task NoFrameCancellationControls()
+    {
+        using var scope=new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var stop=new CancellationTokenSource();
+        var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();
+        Task<TcpClient>? lifecycleAccept=null;TcpClient? lifecyclePeer=null;
+        try {
+            var connected=ScrcpyStartup.Connect(((IPEndPoint)listener.LocalEndpoint).Port,()=>false,stop.Token,_=>{});
+            using var videoPeer=await listener.AcceptTcpClientAsync(scope.Token);
+            lifecycleAccept=listener.AcceptTcpClientAsync(scope.Token).AsTask();
+            await videoPeer.GetStream().WriteAsync(new byte[]{0},scope.Token);
+            using var client=await connected;
+            try { lifecyclePeer=await lifecycleAccept.WaitAsync(TimeSpan.FromSeconds(1)); }
+            catch(TimeoutException){throw new Exception("No owned lifecycle connection can notify a no-first-frame producer of Stop");}
+            var metadata=new byte[76];BinaryPrimitives.WriteUInt32BigEndian(metadata.AsSpan(64),0x68323634);
+            BinaryPrimitives.WriteInt32BigEndian(metadata.AsSpan(68),1344);BinaryPrimitives.WriteInt32BigEndian(metadata.AsSpan(72),704);
+            await videoPeer.GetStream().WriteAsync(metadata,scope.Token);
+            var reader=new ScrcpyVideoReader(client.GetStream());await reader.Header(scope.Token,dummyAlreadyRead:true);
+            var noPacket=reader.Packet(scope.Token);var input=lifecyclePeer.GetStream().ReadAsync(new byte[1],scope.Token).AsTask();
+            if(noPacket.IsCompleted||input.IsCompleted)throw new Exception("Modeled no-frame producer did not retain both owners");
+            stop.Cancel();
+            if(await input.WaitAsync(scope.Token)!=0)throw new Exception("Lifecycle channel wrote input bytes instead of closing");
+            if(noPacket.IsCompleted)throw new Exception("Stop notification fabricated producer media EOF");
+            videoPeer.Dispose();if(await noPacket.WaitAsync(scope.Token)!=null)throw new Exception("Actual peer EOF did not retire the packet reader");
+            Console.WriteLine("PASS actual loopback metadata/no-first-frame Stop: zero control bytes, lifecycle EOF, retained media owner until actual video EOF; no device");
+        } finally {
+            scope.Cancel();listener.Stop();lifecyclePeer?.Dispose();
+            if(lifecycleAccept is not null)try{(await lifecycleAccept).Dispose();}catch(OperationCanceledException){}catch(SocketException){}
+        }
     }
     static async Task Denied(byte[] data,bool header)
     {

@@ -294,12 +294,27 @@ nonadvancing packets still drop, deltas cannot establish a fresh decoder, and
 only a real decoded current frame restores the live label. There is no automatic
 native capture restart, retry, control write or IDR request.
 
-The pinned server profile has control=false, so no current same-capture control
-route can request an IDR. When recovery remains unresolved, an operator may
-select Disconnect, require actual native EOF/reaping and forward/jar cleanup,
-then separately select Connect once. A stale document or absent host PID does
-not substitute for that retirement evidence. Original source05/capture evidence
-stays unchanged; packet counters cannot retrospectively identify its failure.
+The pinned scrcpy3.3.4 raw profile opens video followed by a private lifecycle
+connection on the same selected server. The latter uses scrcpy's control socket
+only for EOF cancellation: its stream is never exposed and no input, clipboard,
+power or IDR message is serialized. `power_on=false` and
+`clipboard_autosync=false` disable those server defaults. This is not a browser
+input-control API. On Stop, closing that connection gives the server's blocking
+control receiver a termination signal even when video has produced no packet.
+The host still requires actual server exit, both pipe EOFs/reaping and exact
+forward/JAR cleanup; a closed lifecycle socket is not a retirement receipt.
+An incomplete startup handshake or a blocked Android capture shutdown may
+remain HELD. No timer fabricates completion or repeats the capture.
+
+This follows the pinned upstream
+[connection order](https://github.com/Genymobile/scrcpy/blob/v3.3.4/server/src/main/java/com/genymobile/scrcpy/device/DesktopConnection.java),
+[controller EOF handling](https://github.com/Genymobile/scrcpy/blob/v3.3.4/server/src/main/java/com/genymobile/scrcpy/control/Controller.java)
+and [server shutdown/join](https://github.com/Genymobile/scrcpy/blob/v3.3.4/server/src/main/java/com/genymobile/scrcpy/Server.java).
+The video size header precedes codec/capture startup in
+[SurfaceEncoder](https://github.com/Genymobile/scrcpy/blob/v3.3.4/server/src/main/java/com/genymobile/scrcpy/video/SurfaceEncoder.java).
+Header-only reception identifies no cause for absent encoded output. A stale
+document or absent host PID does not substitute for retirement evidence.
+Original capture failures remain unchanged.
 
 For the standalone scrcpy raw capture, authenticated `GET /api/captures` adds
 `rawRead` on the existing status row (null for other producer paths). This is a
@@ -322,7 +337,7 @@ The existing video-ready, stop/close-observed, capture-failed, child-wait HELD
 and terminal evidence details also carry `rawRead`, including normal EOF.
 These facts do not prove fanout delivery, decoding, encoder progress or server
 retirement. Host UTC is receipt time only; PTS is never compared with the host
-clock. Stop ordering, guards, control=false and actual retirement requirements
+clock. Stop ordering, guards, absence of input writes and actual retirement requirements
 remain unchanged. In-memory fixtures cover fragmentation, partial cancellation,
 truncated input and complete packet accounting; they do not qualify a headset.
 
