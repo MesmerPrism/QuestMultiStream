@@ -1,0 +1,34 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+test('local timing refresh exposes arriving packets and growing draw age during a decoder stall',async()=>{
+ const nodes=new Map(),intervals=[],requests=[];let clock=1000,decoder,socket;
+ const context={drawImage(){},clearRect(){},putImageData(){}};
+ const element=id=>{if(!nodes.has(id))nodes.set(id,{value:id==='source'?'q':id==='view'?'full':'',textContent:'',style:{},options:[{}],files:[],hidden:false,append(o){this.options.push(o);},getContext(){return context;},pause(){},removeAttribute(){}});return nodes.get(id);};
+ globalThis.document={hidden:false,getElementById:element,createElement:()=>({getContext:()=>context}),addEventListener(){}};
+ globalThis.location={hash:'#token=fixture',pathname:'/',host:'127.0.0.1:43118'};
+ globalThis.sessionStorage={getItem(){return null;},setItem(){}};globalThis.history={replaceState(){}};
+ globalThis.performance={now:()=>clock};globalThis.setInterval=(callback,delay)=>intervals.push({callback,delay});
+ globalThis.window={VideoDecoder:true};
+ globalThis.fetch=async(url,options)=>{requests.push({url,options});return {ok:true,json:async()=>url.startsWith('/api/sources')?[]:{available:false}};};
+ globalThis.WebSocket=class{static OPEN=1;constructor(){this.readyState=1;socket=this;}close(){this.readyState=3;this.onclose?.();}};
+ globalThis.VideoDecoder=class{constructor(options){this.options=options;this.decodeQueueSize=0;this.state='configured';decoder=this;}configure(){}close(){this.state='closed';}decode(){this.options.output({displayWidth:320,displayHeight:180,close(){}});}};
+ globalThis.EncodedVideoChunk=class{constructor(options){Object.assign(this,options);}};
+ const packet=(config,key,pts)=>{const payload=config?[0,0,0,1,0x67,0x64,0,0x1f]:[0,0,1,0x65],bytes=new Uint8Array(12+payload.length),header=new DataView(bytes.buffer);header.setBigUint64(0,(config?1n<<63n:0n)|(key?1n<<62n:0n)|BigInt(pts));header.setUint32(8,payload.length);bytes.set(payload,12);return bytes.buffer;};
+ await import('./app.mjs?stalled-timing-control');await element('connect').onclick();socket.onopen();
+ await socket.onmessage({data:packet(true,false,0)});await socket.onmessage({data:packet(false,true,1)});
+ const first=JSON.parse(element('timingReport').textContent);assert.equal(first.videoPackets,1);assert.equal(first.canvasDraw.ageMs,0);
+ clock=3000;decoder.decodeQueueSize=9;await socket.onmessage({data:packet(false,false,2000001)});
+ assert.match(element('status').textContent,/Waiting for next keyframe/);
+ clock=6000;for(const interval of intervals)await interval.callback();
+ const stalled=JSON.parse(element('timingReport').textContent);
+ assert.equal(stalled.videoPackets,2,'new packet is visible before any resumed draw');
+ assert.equal(stalled.arrival.maxGapMs,2000);assert.equal(stalled.arrival.ageMs,3000);
+ assert.equal(stalled.canvasDraws,1);assert.equal(stalled.canvasDraw.ageMs,5000);
+ const local=intervals.find(interval=>interval.delay===250);assert.ok(local,'UI timing has an independent 250ms local clock');
+ const count=requests.length;clock=6250;await local.callback();assert.equal(requests.length,count,'local clock performs no backend polls');
+ assert.equal(JSON.parse(element('timingReport').textContent).canvasDraw.ageMs,5250);
+ element('stop').onclick();const closed=element('timingReport').textContent;clock=7000;await local.callback();
+ assert.equal(element('timingReport').textContent,closed,'disconnect freezes the retained final snapshot');
+ assert.equal(JSON.parse(closed).observer,'disconnected');assert.equal(requests.filter(r=>r.options?.method==='POST').length,1);
+});

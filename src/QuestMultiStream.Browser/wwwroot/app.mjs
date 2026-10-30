@@ -93,7 +93,7 @@ try{const response=await fetch('/api/sources?token='+encodeURIComponent(token));
 await refreshCaptureMode();
 $('connect').disabled=$('source').options.length===1;
 if(observeOnly&&!$('connect').disabled)await $('connect').onclick();
-setInterval(()=>{if(mode&&frameTime&&socket?.readyState===WebSocket.OPEN&&performance.now()-frameTime>=1000)status((streamError?streamError+' · ':'')+'No new decoded frame · age '+((performance.now()-frameTime)/1000).toFixed(1)+' s · freshness unknown');},1000);
+setInterval(()=>{if(mirrorTiming)timingMetrics();if(mode&&frameTime&&socket?.readyState===WebSocket.OPEN&&performance.now()-frameTime>=1000)status((streamError?streamError+' · ':'')+'No new decoded frame · age '+((performance.now()-frameTime)/1000).toFixed(1)+' s · freshness unknown');},250);
 
 try{const f=await fetch('/api/fixture?token='+encodeURIComponent(token));if(f.ok&& (await f.json()).available)$('fixture').hidden=false;}catch{}
 $('fixture').onclick=async()=>{stop();const current=generation;video.src='/fixture?token='+encodeURIComponent(token);video.loop=true;mode='Synthetic fixture';try{await video.play();if(current===generation){status('Synthetic fixture · no headset capture');localLoop(current);}}catch(e){status(e.message);}};
