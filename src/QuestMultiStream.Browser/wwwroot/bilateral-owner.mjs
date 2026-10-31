@@ -81,6 +81,7 @@ export async function mountBilateralOwner({document,call,storage,token}){
  async function refreshOwner(){if(refreshingOwner)return;refreshingOwner=true;
   try{if(controller.pending){try{const value=await controller.reconcile();say('Original request '+value.state+(value.actualEffectsCompleted?' · both headsets completed':' · completion unconfirmed'));}catch{say('Original outcome unknown · request retained; no retry');}}
    current=await call('/api/hub/v2/status');
+   if(!inventory)await devices();
    try{
     const choices=runs?.selectionId===current.selectionId&&runs?.revision===current.revision?runs:await call('/api/hub/v2/runs');runs=choices;const stamp=JSON.stringify([choices.selectionId,choices.runs]);
     if(stamp!==runInventoryStamp){
@@ -127,5 +128,8 @@ export async function mountBilateralOwner({document,call,storage,token}){
   }
  };
  $('stopMonitor').onclick=async()=>{try{await call('/operator-stop',{method:'POST'});$('status').textContent='Monitor stop requested · mirror retirement pending';}catch{$('status').textContent='Monitor stop outcome unknown';}};
- await call('/api/hub/v2/capabilities');await devices();const timer=setInterval(refresh,1000);await refresh();return {refresh,dispose(){clearInterval(timer);}};
+ // This read is diagnostic; a startup refusal must not discard the normal
+ // authenticated status loop or the disposal handle. Mutations stay explicit.
+ try{await call('/api/hub/v2/capabilities');}catch(error){say('Owner capability check unavailable · '+error.message);render();}
+ await devices();const timer=setInterval(refresh,1000);await refresh();return {refresh,dispose(){clearInterval(timer);}};
 }
