@@ -81,6 +81,7 @@ export async function mountBilateralOwner({document,call,storage,token}){
  async function refreshOwner(){if(refreshingOwner)return;refreshingOwner=true;
   try{if(controller.pending){try{const value=await controller.reconcile();say('Original request '+value.state+(value.actualEffectsCompleted?' · both headsets completed':' · completion unconfirmed'));}catch{say('Original outcome unknown · request retained; no retry');}}
    current=await call('/api/hub/v2/status');
+   if(!inventory)await devices();
    try{
     const choices=runs?.selectionId===current.selectionId&&runs?.revision===current.revision?runs:await call('/api/hub/v2/runs');runs=choices;const stamp=JSON.stringify([choices.selectionId,choices.runs]);
     if(stamp!==runInventoryStamp){

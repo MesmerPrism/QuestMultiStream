@@ -43,9 +43,9 @@ test('initial capability503 keeps read-only polling alive through auth denial, r
   calls.push({path,options});
   if(phase==='unready')throw Object.assign(Error('Owner backend unavailable (503)'),{status:503});
   if(phase==='denied')throw Object.assign(Error('Owner authentication denied (401)'),{status:401});
-  if(path.endsWith('/status'))return status();
-  if(path.endsWith('/devices'))return {ownerEpoch:'fixture',revision:1,devices:[]};
-  if(path.endsWith('/runs'))return {selectionId,revision:1,runs:[]};
+  if(path.endsWith('/status'))return {...status(),selectionId:null,members:[],peers:[],phase:'unselected',readiness:{canEstablish:false,canNormalStop:false,canWhole:false,canMode:false,reasonCodes:['unselected']}};
+  if(path.endsWith('/devices'))return {ownerEpoch:'fixture',revision:1,devices:['Q','W'].map(role=>({...member(role),label:'Headset '+role,ready:true}))};
+  if(path.endsWith('/runs'))return {selectionId:null,revision:1,runs:[]};
   return [];
  };
  try{
@@ -53,9 +53,16 @@ test('initial capability503 keeps read-only polling alive through auth denial, r
   assert.equal(timers.size,1,'initial read failure must not abort interval setup');
   assert.match(el('status').textContent,/unavailable/);assert.match(el('actionResult').textContent,/503/);
   phase='denied';await timers.get(1)();
-  assert.match(el('status').textContent,/unavailable/);assert.equal(el('prepare').disabled,true);assert.equal(el('execute').disabled,true);
+  assert.match(el('status').textContent,/unavailable/);assert.equal(el('prepare').disabled,true);assert.equal(el('execute').disabled,true);assert.equal(el('selectPair').disabled,true);
   phase='ready';await timers.get(1)();
   assert.equal(el('status').textContent,'Owner connected');
+  assert.equal(el('deviceQ').options.length,2);assert.equal(el('deviceW').options.length,2);
+  assert.equal(el('deviceQ').value,'deviceQ');assert.equal(el('deviceW').value,'deviceW');
+  assert.equal(el('selectPair').disabled,false,'unselected startup must recover useful inventory without a click');
+  assert.equal(el('prepare').disabled,true,'inventory recovery does not select or start the pair');
+  const deviceReads=calls.filter(c=>c.path.endsWith('/devices')).length;
+  assert.equal(deviceReads,2,'one failed startup read and one successful recovery read');
+  await timers.get(1)();assert.equal(calls.filter(c=>c.path.endsWith('/devices')).length,deviceReads,'available inventory does not add a recurring catalog request');
   assert.equal(calls.filter(c=>c.path.endsWith('/capabilities')).length,1,'status polling does not replay startup or mutations');
   assert.equal(calls.filter(c=>c.options?.method==='POST').length,0);
   const count=calls.length;panel.dispose();panel=null;
