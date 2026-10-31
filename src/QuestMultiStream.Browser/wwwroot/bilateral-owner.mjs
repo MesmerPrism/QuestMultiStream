@@ -52,6 +52,7 @@ export class BilateralController{
    let caps;try{caps=await this.call('/api/hub/v2/capabilities',blendRead);}catch{throw Object.assign(Error('Numeric capability unavailable; no request sent'),{blendCapability:'unknown'});}
    if(!amountSupported(caps,request.ownerEpoch))throw Object.assign(Error('Numeric Blend unsupported; no request sent'),{blendCapability:'unsupported'});
   }
+  if(this.pending)throw Error('Original request retained; read its outcome first'); // Capability reads may have overlapped.
   const retained=JSON.parse(JSON.stringify(request));this.storage.setItem('questms-owner-v2-pending',JSON.stringify(retained));this.pending=Object.freeze(retained);
   return this.result(await this.call('/api/hub/v2/actions',{method:'POST',body:JSON.stringify(retained)}));
  }

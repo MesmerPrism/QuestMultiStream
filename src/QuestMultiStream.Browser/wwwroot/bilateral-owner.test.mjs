@@ -215,3 +215,21 @@ test('actual numeric field reviews before one Execute, recovers capability503 an
   missingNumeric=true;panel=await mountBilateralOwner({document,call,storage:storage(),token:'fixture'});el('modeBlend').onclick();assert.equal(el('execute').disabled,false);assert.equal('blendAmountBits' in JSON.parse(el('envelope').textContent),false,'missing new HTML remains usable preset-only');
  }finally{panel?.dispose();globalThis.setInterval=oldInterval;}
 });
+
+test('overlapping numeric capability preflights retain the first Original and send only one POST',async()=>{
+ const retained=storage(),calls=[];let releaseCapabilities,releasePost;
+ const capabilities=new Promise(resolve=>releaseCapabilities=resolve),postReply=new Promise(resolve=>releasePost=resolve);
+ const firstRequest=makeAction(status(),'mode',null,null,'blend',requestId,1048576000),secondRequest=makeAction(status(),'mode',null,null,'blend','33333333-3333-3333-3333-333333333333',1056964608);
+ const call=async(path,options)=>{
+  if(path.endsWith('/capabilities')){await capabilities;return {schema:'questms.owner.capabilities.v2',ownerEpoch:'fixture',protocolVersion:2,features:['blend_amount_bits_v1']};}
+  const request=JSON.parse(options.body);calls.push(request);await postReply;return result(request,'running');
+ };
+ const controller=new BilateralController(call,retained),first=controller.execute(firstRequest),second=controller.execute(secondRequest),settled=Promise.allSettled([first,second]);
+ try{
+  releaseCapabilities();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(calls.length,1,'a second preflight completion must not overwrite or dispatch past the retained Original');
+  assert.equal(controller.pending.requestId,requestId);assert.equal(controller.pending.blendAmountBits,1048576000);
+  assert.equal(JSON.parse(retained.getItem('questms-owner-v2-pending')).requestId,requestId);
+  releasePost();const outcomes=await settled;assert.equal(outcomes[0].status,'fulfilled');assert.equal(outcomes[1].status,'rejected');
+ }finally{releaseCapabilities();releasePost();await settled;}
+});
