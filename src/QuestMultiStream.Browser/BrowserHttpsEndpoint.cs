@@ -37,6 +37,9 @@ internal sealed class BrowserHttpsEndpoint(BrowserHttpsSelection selection,X509C
         // No forwarded-host/proto trust: direct Kestrel transport selects the authority.
         builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(o=>o.ForwardedHeaders=Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.None);
         builder.WebHost.ConfigureKestrel(o=>{
+            // Listen APIs otherwise accumulate appsettings/environment endpoints.
+            // This opt-in owns exactly the two selected sockets, without reload binding.
+            o.Configure(new ConfigurationBuilder().Build(),reloadOnChange:false);
             o.Listen(IPAddress.Loopback,loopbackPort);
             o.Listen(IPAddress.Parse(selection.ListenAddress),selection.Port,listener=>listener.UseHttps(certificate));
         });

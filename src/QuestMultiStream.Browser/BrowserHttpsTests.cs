@@ -63,7 +63,11 @@ internal static class BrowserHttpsTests
         using var signed=publicCertificate.CopyWithPrivateKey(key);
         using var endpoint=new BrowserHttpsEndpoint(selection,X509CertificateLoader.LoadPkcs12(signed.Export(X509ContentType.Pkcs12),null));
         var builder=WebApplication.CreateBuilder(new WebApplicationOptions{ContentRootPath=Path.GetFullPath("src/QuestMultiStream.Browser")});
-        builder.Configuration.Sources.Clear();builder.Logging.ClearProviders();endpoint.Configure(builder,httpPort);
+        builder.Configuration.Sources.Clear();builder.Logging.ClearProviders();
+        // An inherited endpoint must not append a third listener. Reusing the owned
+        // loopback port makes the regression fail on duplicate binding, never LAN exposure.
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string,string?>{["Kestrel:Endpoints:Unselected:Url"]=$"http://127.0.0.1:{httpPort}"});
+        endpoint.Configure(builder,httpPort);
         await using var app=builder.Build();var local=$"http://127.0.0.1:{httpPort}";
         BrowserHttpsEndpoint.Guard(app,local,selection);app.UseWebSockets();app.UseStaticFiles();
         bool Auth(HttpContext c)=>c.Request.Query["token"]=="fixture";
@@ -80,6 +84,7 @@ internal static class BrowserHttpsTests
         using var client=new HttpClient(handler,false){Timeout=TimeSpan.FromSeconds(10)};
         try{
             await app.StartAsync();
+            if(app.Urls.Order().SequenceEqual(new[]{local,selection.Origin}.Order())!=true)throw new Exception("Unselected endpoint configuration appended a listener");
             if((await client.GetAsync(selection.Origin+"/manifest.webmanifest")).StatusCode!=HttpStatusCode.OK)throw new Exception("TLS static manifest failed");
             if((await client.GetAsync(selection.Origin+"/api/hub/v2/status")).StatusCode!=HttpStatusCode.Unauthorized)throw new Exception("TLS bearer authentication bypassed");
             if((await client.GetAsync(selection.Origin+"/api/hub/v2/status?token=fixture")).StatusCode!=HttpStatusCode.ServiceUnavailable)throw new Exception("TLS authenticated production route unavailable");
@@ -114,5 +119,6 @@ internal static class BrowserHttpsTests
         }finally{await app.StopAsync();}
     }
 }
+
 
 

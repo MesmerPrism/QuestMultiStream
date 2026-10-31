@@ -121,6 +121,10 @@ must have private-network connectivity; configure only the selected private
 listener's network access deliberately. Do not use wildcard/public listeners,
 router port forwarding, disabled certificate checks or plain LAN HTTP.
 
+Optional HTTPS selection replaces inherited Kestrel endpoint configuration,
+so appsettings/environment endpoints cannot append listeners. Omission retains
+the original configuration behavior.
+
 The direct TLS connection, exact local address/port and exact selected Host
 choose the browser authority. Mutation and WebSocket requests still need the
 existing bearer token and that exact Origin; a loopback Origin cannot cross the
