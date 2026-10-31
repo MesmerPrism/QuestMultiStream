@@ -131,3 +131,39 @@ test('a pending app readback never delays independent mirror status and controls
   assert.equal(el('startDisplayQ').disabled,true);
  }finally{releaseReadback();if(mounting)panel=await mounting;panel?.dispose();globalThis.setInterval=oldInterval;}
 });
+
+test('mode shortcut reviews Peer without POST, invalidates changed status and retains one lost Execute Original across reload',async()=>{
+ const nodes=new Map(),calls=[],retained=storage(),oldInterval=globalThis.setInterval;globalThis.setInterval=()=>1;
+ class Element{constructor(tag){this.tag=tag;this.options=[];this.children=[];this.dataset={};this.value='';this.hidden=false;this.disabled=false;this.parentElement={};}append(e){this.children.push(e);if(e.tag==='option'){this.options.push(e);if(!this.value)this.value=e.value;}}replaceChildren(){this.children=[];this.options=[];this.value='';}}
+ const el=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);},document={getElementById:el,createElement:tag=>new Element(tag)};
+ let current=status(),posted,panel;
+ const call=async(path,options)=>{
+  calls.push({path,options});
+  if(options?.method==='POST'){posted=JSON.parse(options.body);throw Error('fixture lost reply after original retained');}
+  if(path.includes('/actions/'))return result(posted,'running');
+  if(path.endsWith('/status'))return current;
+  if(path.endsWith('/devices'))return {ownerEpoch:current.ownerEpoch,revision:current.revision,devices:[]};
+  if(path.endsWith('/runs'))return {selectionId:current.selectionId,revision:current.revision,runs:[]};
+  return [];
+ };
+ try{
+  panel=await mountBilateralOwner({document,call,storage:retained,token:'fixture'});
+  assert.equal(el('modeShortcuts').hidden,false);assert.equal(el('modePeer').disabled,false);assert.equal(typeof el('modePeer').onclick,'function','Peer shortcut must prepare through an actual UI callback');
+  await el('modePeer').onclick();
+  assert.equal(calls.filter(c=>c.options?.method==='POST').length,0);
+  const reviewed=JSON.parse(el('envelope').textContent);
+  assert.equal(reviewed.action,'mode');assert.equal(reviewed.mode,'peer');assert.equal(reviewed.ownerEpoch,'fixture');assert.equal(reviewed.selectionId,selectionId);assert.equal(reviewed.expectedRevision,1);assert.equal(reviewed.runChoice,null);
+  assert.match(el('actionResult').textContent,/Peer/);assert.match(el('execute').textContent,/Peer/);assert.equal(el('execute').disabled,false);assert.equal(el('modePeer').ariaPressed,'true');
+  current={...current,ownerEpoch:'fixture-next',revision:2};await panel.refresh();
+  assert.equal(el('execute').disabled,true);assert.equal(el('envelope').textContent,'No request.');
+  await el('modePeer').onclick();await el('execute').onclick();
+  assert.equal(posted.mode,'peer');assert.equal(posted.ownerEpoch,'fixture-next');assert.equal(posted.expectedRevision,2);
+  const original=JSON.parse(retained.getItem('questms-owner-v2-pending'));assert.equal(original.requestId,posted.requestId);assert.equal(original.mode,'peer');
+  for(const id of ['modeOwn','modePeer','modeBlend'])assert.equal(el(id).disabled,true);
+  await el('modeOwn').onclick();await el('execute').onclick();await panel.refresh();
+  assert.equal(calls.filter(c=>c.options?.method==='POST').length,1,'shortcuts and polling never replay a retained mutation');
+  panel.dispose();panel=await mountBilateralOwner({document,call,storage:retained,token:'fixture'});
+  assert.equal(el('modePeer').disabled,true);assert.equal(JSON.parse(retained.getItem('questms-owner-v2-pending')).requestId,original.requestId);
+  assert.equal(calls.filter(c=>c.options?.method==='POST').length,1,'relaunch reads the same Original');
+ }finally{panel?.dispose();globalThis.setInterval=oldInterval;}
+});
