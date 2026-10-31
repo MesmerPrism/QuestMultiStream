@@ -117,7 +117,11 @@ internal static class OwnerV2Tests
     }
     internal static async Task ServeFixture(){
         var builder=WebApplication.CreateBuilder(new WebApplicationOptions{ContentRootPath=Directory.GetCurrentDirectory()});
-        builder.Configuration.Sources.Clear();builder.Logging.ClearProviders();builder.WebHost.ConfigureKestrel(o=>o.Listen(IPAddress.Loopback,0));
+        builder.Configuration.Sources.Clear();builder.Logging.ClearProviders();
+        // An explicit fixture port permits a machine coordination lease before binding.
+        var fixturePort=int.TryParse(Environment.GetEnvironmentVariable("QMS_FIXTURE_PORT"),out var selectedPort)?selectedPort:0;
+        if(fixturePort!=0&&fixturePort is <1024 or >65535)throw new InvalidDataException("Invalid fixture port");
+        builder.WebHost.ConfigureKestrel(o=>o.Listen(IPAddress.Loopback,fixturePort));
         await using var app=builder.Build();
         var config=Path.Combine(Path.GetTempPath(),"questms-render-"+Guid.NewGuid()+".json");
         File.WriteAllText(config,JsonSerializer.Serialize(new HubBridgeSelection("http://127.0.0.1:43123/operator",new string('k',43),"local","local",null,Epoch,2),HubControl.Json));

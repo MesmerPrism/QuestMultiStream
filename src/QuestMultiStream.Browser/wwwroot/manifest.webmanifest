@@ -1,0 +1,15 @@
+{
+  "id": "/",
+  "name": "Quest Multi Stream",
+  "short_name": "Quest Multi Stream",
+  "description": "Authenticated two-headset controls and optional screen mirrors.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#07121d",
+  "theme_color": "#07121d",
+  "icons": [
+    { "src": "icons/quest-multi-stream-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/quest-multi-stream-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
