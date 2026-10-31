@@ -32,6 +32,38 @@ test('changed owner/action/selection and fabricated effective completion retain 
   const controller=new BilateralController(call,retained);await assert.rejects(controller.execute(request));assert.equal(controller.pending.requestId,requestId);
  }
 });
+
+test('initial capability503 keeps read-only polling alive through auth denial, readiness and disposal',async()=>{
+ const nodes=new Map(),calls=[],timers=new Map(),cleared=[],oldInterval=globalThis.setInterval,oldClear=globalThis.clearInterval;
+ globalThis.setInterval=callback=>{timers.set(1,callback);return 1;};globalThis.clearInterval=id=>{cleared.push(id);timers.delete(id);};
+ class Element{constructor(tag){this.tag=tag;this.options=[];this.children=[];this.dataset={};this.value='';this.parentElement={};}append(e){this.children.push(e);if(e.tag==='option'){this.options.push(e);if(!this.value)this.value=e.value;}}replaceChildren(){this.children=[];this.options=[];this.value='';}}
+ const el=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);},document={getElementById:el,createElement:tag=>new Element(tag)};
+ let phase='unready',panel;
+ const call=async(path,options)=>{
+  calls.push({path,options});
+  if(phase==='unready')throw Object.assign(Error('Owner backend unavailable (503)'),{status:503});
+  if(phase==='denied')throw Object.assign(Error('Owner authentication denied (401)'),{status:401});
+  if(path.endsWith('/status'))return status();
+  if(path.endsWith('/devices'))return {ownerEpoch:'fixture',revision:1,devices:[]};
+  if(path.endsWith('/runs'))return {selectionId,revision:1,runs:[]};
+  return [];
+ };
+ try{
+  panel=await mountBilateralOwner({document,call,storage:storage(),token:'fixture'});
+  assert.equal(timers.size,1,'initial read failure must not abort interval setup');
+  assert.match(el('status').textContent,/unavailable/);assert.match(el('actionResult').textContent,/503/);
+  phase='denied';await timers.get(1)();
+  assert.match(el('status').textContent,/unavailable/);assert.equal(el('prepare').disabled,true);assert.equal(el('execute').disabled,true);
+  phase='ready';await timers.get(1)();
+  assert.equal(el('status').textContent,'Owner connected');
+  assert.equal(calls.filter(c=>c.path.endsWith('/capabilities')).length,1,'status polling does not replay startup or mutations');
+  assert.equal(calls.filter(c=>c.options?.method==='POST').length,0);
+  const count=calls.length;panel.dispose();panel=null;
+  assert.deepEqual(cleared,[1]);assert.equal(timers.size,0);
+  for(const callback of timers.values())await callback();
+  assert.equal(calls.length,count,'disposed interval cannot keep polling');
+ }finally{panel?.dispose();globalThis.setInterval=oldInterval;globalThis.clearInterval=oldClear;}
+});
 test('actual UI callbacks keep mirror effects independent, hide identities and require explicit run choice',async()=>{
  const nodes=new Map(),calls=[],oldInterval=globalThis.setInterval;globalThis.setInterval=()=>1;
  class Element{constructor(tag){this.tag=tag;this.options=[];this.children=[];this.dataset={};this.value='';this.hidden=false;this.disabled=false;this.parentElement={};}append(e){this.children.push(e);if(e.tag==='option'){this.options.push(e);if(!this.value)this.value=e.value;}}replaceChildren(){this.children=[];this.options=[];this.value='';}}
