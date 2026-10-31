@@ -42,4 +42,3 @@ export async function mountPwa({document,window,storage,loadHub}) {
 
 if(typeof window!=='undefined'&&typeof document!=='undefined')
  await mountPwa({document,window,storage:sessionStorage,loadHub:()=>import('./hub.mjs')});
-
