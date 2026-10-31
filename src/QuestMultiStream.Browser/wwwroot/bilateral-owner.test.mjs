@@ -63,7 +63,7 @@ test('initial capability503 keeps read-only polling alive through auth denial, r
   const deviceReads=calls.filter(c=>c.path.endsWith('/devices')).length;
   assert.equal(deviceReads,2,'one failed startup read and one successful recovery read');
   await timers.get(1)();assert.equal(calls.filter(c=>c.path.endsWith('/devices')).length,deviceReads,'available inventory does not add a recurring catalog request');
-  assert.equal(calls.filter(c=>c.path.endsWith('/capabilities')).length,1,'status polling does not replay startup or mutations');
+  assert.equal(calls.filter(c=>c.path.endsWith('/capabilities')).length,2,'one optional capability recovery read after startup failure, with no mutation or extra timer');
   assert.equal(calls.filter(c=>c.options?.method==='POST').length,0);
   const count=calls.length;panel.dispose();panel=null;
   assert.deepEqual(cleared,[1]);assert.equal(timers.size,0);
@@ -166,4 +166,70 @@ test('mode shortcut reviews Peer without POST, invalidates changed status and re
   assert.equal(el('modePeer').disabled,true);assert.equal(JSON.parse(retained.getItem('questms-owner-v2-pending')).requestId,original.requestId);
   assert.equal(calls.filter(c=>c.options?.method==='POST').length,1,'relaunch reads the same Original');
  }finally{panel?.dispose();globalThis.setInterval=oldInterval;}
+});
+
+test('numeric Blend keeps exact Float32 intent through lost/legacy reply and capability fallback without a pending orphan',async()=>{
+ const module=await import('./bilateral-owner.mjs');assert.equal(typeof module.blendAmountBits,'function','numeric draft must use one Float32 conversion');
+ assert.equal(module.blendAmountBits('0.25'),1048576000);assert.equal(module.blendAmountBits('0.5'),1056964608);assert.equal(module.blendAmountValue(module.blendAmountBits('0.1')),0.10000000149011612);
+ assert.throws(()=>module.blendAmountBits('-0'));assert.throws(()=>module.blendAmountBits(''));
+ const request=makeAction(status(),'mode',null,null,'blend',requestId,1048576000),retained=storage(),calls=[];
+ assert.equal(request.blendAmountBits,1048576000);let supported=false;
+ const observation={amountBits:1048576000,controlRevision:'7',retiredFrameOrdinal:'42',qualification:'retired_configuration',receipt:'qualified fixture'};
+ const call=async(path,options)=>{
+  calls.push({path,options});
+  if(path.endsWith('/capabilities'))return {schema:'questms.owner.capabilities.v2',ownerEpoch:'fixture',protocolVersion:2,features:supported?['blend_amount_bits_v1']:[]};
+  const value=result(request);if(path.includes('/actions/'))value.peers=value.peers.map(p=>({...p,mode:'blend',blendAmount:observation}));return value;
+ };
+ const first=new BilateralController(call,retained);
+ await assert.rejects(first.execute(request));assert.equal(retained.getItem('questms-owner-v2-pending'),null);assert.equal(calls.filter(c=>c.options?.method==='POST').length,0);
+ supported=true;await assert.rejects(first.execute(request),'plain effective without qualified numeric observations must remain pending');
+ assert.equal(JSON.parse(retained.getItem('questms-owner-v2-pending')).blendAmountBits,1048576000);request.blendAmountBits=1056964608;
+ const reload=new BilateralController(call,retained);await reload.reconcile();assert.equal(reload.pending,null);
+ assert.equal(calls.filter(c=>c.options?.method==='POST').length,1);assert.match(calls.find(c=>c.path.includes('/actions/')).options.headers.Accept,/questms.blend-amount-bits.v1/);
+});
+
+test('actual numeric field reviews before one Execute, recovers capability503 and keeps retained peer readback/core-only mixed shell truthful',async()=>{
+ const nodes=new Map(),calls=[],oldInterval=globalThis.setInterval;globalThis.setInterval=()=>1;
+ class Element{constructor(tag){this.tag=tag;this.options=[];this.children=[];this.dataset={};this.value='';this.hidden=false;this.disabled=false;this.parentElement={};}append(e){this.children.push(e);if(e.tag==='option'){this.options.push(e);if(!this.value)this.value=e.value;}}replaceChildren(){this.children=[];this.options=[];this.value='';}}
+ let missingNumeric=false;
+ const el=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);},document={getElementById:id=>missingNumeric&&id.startsWith('blendAmount')?null:el(id),createElement:tag=>new Element(tag)};
+ const current={...status(),peers:['Q','W'].map(role=>({...peer(role),mode:'blend'}))};let capReads=0,posted,releaseCapability;const capabilityRecovery=new Promise(resolve=>releaseCapability=resolve);
+ const observed={amountBits:1048576000,controlRevision:'7',retiredFrameOrdinal:'42',qualification:'retired_configuration',receipt:'retired fixture'};
+ const call=async(path,options)=>{
+  calls.push({path,options});
+  if(path.endsWith('/capabilities')){if(++capReads===1)throw Error('503 startup');if(capReads===2)await capabilityRecovery;return {schema:'questms.owner.capabilities.v2',ownerEpoch:'fixture',protocolVersion:2,features:['blend_amount_bits_v1']};}
+  if(path.endsWith('/status'))return current;
+  if(path.endsWith('/devices'))return {ownerEpoch:'fixture',revision:1,devices:[]};if(path.endsWith('/runs'))return {selectionId,revision:1,runs:[]};
+  if(options?.method==='POST'){posted=JSON.parse(options.body);throw Error('lost after accepted numeric intent');}
+  if(path.includes('/actions/'))return result(posted,'running');return [];
+ };
+ let panel;
+ try{
+  const mounting=mountBilateralOwner({document,call,storage:storage(),token:'fixture'});await new Promise(resolve=>setImmediate(resolve));assert.equal(el('status').textContent,'Owner connected','optional slow capability must not hide useful core status');releaseCapability();panel=await mounting;assert.equal(capReads,2);
+  el('modeBlend').onclick();assert.equal(el('blendAmount').disabled,false,'retained native freshness is not a numeric admission gate');
+  el('blendAmount').value='0.25';el('blendAmount').oninput();assert.equal(el('execute').disabled,true);
+  el('actionForm').onsubmit({preventDefault(){}});assert.equal(JSON.parse(el('envelope').textContent).blendAmountBits,1048576000);assert.match(el('execute').textContent,/0.25/);
+  assert.equal(calls.filter(c=>c.options?.method==='POST').length,0);await el('execute').onclick();assert.equal(posted.blendAmountBits,1048576000);assert.equal(el('blendAmount').disabled,true);
+  current.peers[0].blendAmount=observed;await panel.refresh();assert.match(el('observations').children[0].children.map(c=>c.textContent).join(' '),/0.25.*retained/);assert.doesNotMatch(el('observations').children[1].children.map(c=>c.textContent).join(' '),/0.25/);
+  assert.equal(calls.filter(c=>c.options?.method==='POST').length,1);panel.dispose();
+  missingNumeric=true;panel=await mountBilateralOwner({document,call,storage:storage(),token:'fixture'});el('modeBlend').onclick();assert.equal(el('execute').disabled,false);assert.equal('blendAmountBits' in JSON.parse(el('envelope').textContent),false,'missing new HTML remains usable preset-only');
+ }finally{panel?.dispose();globalThis.setInterval=oldInterval;}
+});
+
+test('overlapping numeric capability preflights retain the first Original and send only one POST',async()=>{
+ const retained=storage(),calls=[];let releaseCapabilities,releasePost;
+ const capabilities=new Promise(resolve=>releaseCapabilities=resolve),postReply=new Promise(resolve=>releasePost=resolve);
+ const firstRequest=makeAction(status(),'mode',null,null,'blend',requestId,1048576000),secondRequest=makeAction(status(),'mode',null,null,'blend','33333333-3333-3333-3333-333333333333',1056964608);
+ const call=async(path,options)=>{
+  if(path.endsWith('/capabilities')){await capabilities;return {schema:'questms.owner.capabilities.v2',ownerEpoch:'fixture',protocolVersion:2,features:['blend_amount_bits_v1']};}
+  const request=JSON.parse(options.body);calls.push(request);await postReply;return result(request,'running');
+ };
+ const controller=new BilateralController(call,retained),first=controller.execute(firstRequest),second=controller.execute(secondRequest),settled=Promise.allSettled([first,second]);
+ try{
+  releaseCapabilities();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(calls.length,1,'a second preflight completion must not overwrite or dispatch past the retained Original');
+  assert.equal(controller.pending.requestId,requestId);assert.equal(controller.pending.blendAmountBits,1048576000);
+  assert.equal(JSON.parse(retained.getItem('questms-owner-v2-pending')).requestId,requestId);
+  releasePost();const outcomes=await settled;assert.equal(outcomes[0].status,'fulfilled');assert.equal(outcomes[1].status,'rejected');
+ }finally{releaseCapabilities();releasePost();await settled;}
 });

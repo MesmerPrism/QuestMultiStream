@@ -83,3 +83,86 @@ No timer-triggered reset, native restart, implicit Start, mode change or replay.
 Mirror start/stop and observer disconnect remain exclusively existing capture/observer routes;
 they never invoke these product actions. Screen mirror progress cannot certify app peer streaming.
 
+
+## Optional numeric Blend strength
+
+The existing v2 action may carry one optional `blendAmountBits` JSON integer,
+0..1065353216: the exact nonnegative Float32 bits for strength0..1. Positive
+zero is valid; negative-zero bits, present-null, bool/string, fractional or
+exponent tokens, duplicate/unknown fields and out-of-range words are refused.
+Examples: .25=1048576000, .5=1056964608,1=1065353216. Omit the property entirely
+for existing preset behavior (including ordinary Blend=.5); omitted request and
+result shapes remain unchanged.
+
+Explicit bits apply only to `action:"mode",mode:"blend",runChoice:null` in an
+already-running selected Blend pair. Existing owner identity/revision/readiness
+and durable action semantics apply. Native freshness need not be labeled
+`current`: existing retained observations are not upgraded by this feature.
+The owner performs fresh qualified baseline reads before a new numeric stage,
+requires a common baseline amount for this common-field edit, preserves every
+other per-peer mask/policy field and changes amount only. An unavailable/unequal
+baseline can earn a definite failed/no-effects action request before a setter
+Original exists. Existing ordinary preset completion is not retroactively gated.
+Continuation after possible setter ingress preserves its actual Original/ACK;
+missing retired proof causes read-only reconciliation, never another setter.
+
+This strength is Peer camera-input amplitude shaped by Own luminance, not
+uniform opacity or a spatial coverage rectangle. The one UI field is labeled
+**Own-luma-gated Blend strength**. Decimal input is quantized once for the
+prepared request; review shows the exact stored Float32 value. Input events
+only edit the draft and clear review. Existing Review/Execute retains the
+immutable bits; Execute alone sends a mutation. Mode shortcuts keep their
+existing omitted preset requests. No profile/threshold/softness editor, new
+controller, action, endpoint, Native ABI or APK is introduced.
+
+Read clients opt in on the existing capability/status/result GET paths using:
+
+```http
+Accept: application/json; profile="questms.blend-amount-bits.v1"
+```
+
+Only that read representation may append `features:["blend_amount_bits_v1"]`
+to capabilities. Plain old responses remain unchanged. An old backend ignoring
+the header returns the old shape; numeric editing stays unavailable while core
+controls work. Failed startup capability reads recover through the existing
+owner refresh lane without another timer or blocking core status/mirror reads.
+The unsigned header only selects a representation; signed request body bits
+carry numeric intent. Existing paths/HMAC, public bearer and Origin checks stay.
+No extra feature query is introduced.
+
+Client capability support is checked before numeric review/pending persistence,
+and the public bridge rechecks before private POST. A definite local unsupported
+or capability-read refusal is retained in the existing bounded `v2Requests`
+service-lifetime cache as `state:"failed",actualEffectsCompleted:false,peers:[]`,
+with exact request identity and receipt `blend_amount_unsupported_not_dispatched`.
+GET of that UUID returns the known local refusal; it does not query a nonexistent
+private Original or resend. This cache is volatile; no durable denial across
+public-process loss or new journal is claimed. Once private ingress accepts the
+request, its existing durable action request owns reconciliation.
+
+An opted-in status peer may include:
+
+```json
+"blendAmount": {
+  "amountBits": 1048576000,
+  "controlRevision": "7",
+  "retiredFrameOrdinal": "42",
+  "qualification": "retired_configuration",
+  "receipt": "qualified per-peer receipt"
+}
+```
+
+The two counters are positive canonical unsigned decimal strings. This is an
+actual qualified retained retired-configuration observation joined to that
+peer's current identities, never the desired value, a configured-only ACK,
+PC publication age, RGB proof or video freshness. Missing/invalidated observation
+means unavailable. Q and W render independently. Ordinary omitted-field request
+results retain old shapes. A numeric effective result requires both matching
+qualified observations plus existing completion/identity facts. A plain effective
+POST reply lacking those observations remains uncertain with the same UUID/bits;
+opted GET can settle it, even after the public request cache is recreated. It
+must not clear numeric pending, manufacture no-effects or replay POST.
+
+The PWA has no service worker. The new editor starts hidden/disabled, and new JS
+without its HTML nodes stays core-only. Existing coherent asset publication and
+ordinary reload apply; no worker cache or OS-install retry is added.

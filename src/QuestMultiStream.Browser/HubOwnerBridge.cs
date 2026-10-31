@@ -69,10 +69,11 @@ public sealed partial class HubOwnerBridge : IDisposable
     }
     internal static string Mac(string token,string domain,string first,string path,string epoch,string nonce,byte[] bytes)=>
         Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(token),Encoding.UTF8.GetBytes(domain+"\n"+first+"\n"+path+"\n"+epoch+"\n"+nonce+"\n"+Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant()))).ToLowerInvariant();
-    private async Task<T> Exchange<T>(HttpMethod method,string suffix,byte[] body) {
+    private async Task<T> Exchange<T>(HttpMethod method,string suffix,byte[] body,bool blendAmountRead=false) {
         using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var selected=selection;var uri=new Uri(selected.Endpoint+suffix);var nonce=Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
         using var message=new HttpRequestMessage(method,uri);
+        if(blendAmountRead)message.Headers.TryAddWithoutValidation("Accept",V2.BlendAccept);
         if(method==HttpMethod.Post){message.Content=new ByteArrayContent(body);message.Content.Headers.ContentType=new MediaTypeHeaderValue("application/json");}
         if(selected.OwnerEpoch is {} epoch){message.Headers.Add("X-Quest-Owner-Epoch",epoch);message.Headers.Add("X-Quest-Nonce",nonce);message.Headers.Add("X-Quest-Mac",Mac(selected.Token,"QMS-OWNER-REQUEST-1",method.Method,uri.AbsolutePath,epoch,nonce,body));}
         using var response=await client.SendAsync(message,HttpCompletionOption.ResponseHeadersRead,deadline.Token);

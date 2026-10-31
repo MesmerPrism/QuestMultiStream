@@ -10,3 +10,4 @@
 #stopMonitor{min-height:44px}
 
 #modeShortcuts .buttons{margin:8px 0 16px}#modeShortcuts button{min-width:88px}#modeShortcuts button[aria-pressed="true"]{border-color:#00e8ff}
+#blendAmountEditor{max-width:440px;margin-bottom:16px}#blendAmountEditor input{min-height:44px;font-size:16px}

@@ -6,17 +6,24 @@ namespace QuestMultiStream.Browser;
 
 public sealed record OwnerCapabilitiesV2(string Schema,string OwnerEpoch,int ProtocolVersion,string[] Actions,string[] Modes)
 {
-    public void Validate(string epoch){V2.Require(Schema=="questms.owner.capabilities.v2"&&OwnerEpoch==epoch&&ProtocolVersion==2&&Actions is not null&&Modes is not null&&Actions.SequenceEqual(V2.Actions)&&Modes.SequenceEqual(V2.Modes),"Unsupported owner v2 capabilities");}
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] public string[]? Features {get;init;}
+    public void Validate(string epoch){V2.Require(Features is null||Features.Length<=1&&Features.All(f=>f==V2.BlendFeature),"Unsupported feature representation");V2.Require(Schema=="questms.owner.capabilities.v2"&&OwnerEpoch==epoch&&ProtocolVersion==2&&Actions is not null&&Modes is not null&&Actions.SequenceEqual(V2.Actions)&&Modes.SequenceEqual(V2.Modes),"Unsupported owner v2 capabilities");}
 }
 public sealed record OwnerReadinessV2(bool CanEstablish,bool CanNormalStop,bool CanWhole,bool CanMode,string[] ReasonCodes);
 public sealed record OwnerNativeFreshnessV2(string State,string? ObservedMonotonicNs,string? ExpiresMonotonicNs)
 {
     public void Validate(){V2.Require(State is "unknown" or "retained" or "current" or "stale","Unsupported native freshness");V2.Decimal(ObservedMonotonicNs);V2.Decimal(ExpiresMonotonicNs);if(State=="current")V2.Require(ObservedMonotonicNs is not null&&ExpiresMonotonicNs is not null&&ulong.Parse(ExpiresMonotonicNs)>ulong.Parse(ObservedMonotonicNs),"Native freshness lacks owner-qualified clocks");}
 }
+public sealed record OwnerBlendAmountV2(uint AmountBits,string ControlRevision,string RetiredFrameOrdinal,string Qualification,string Receipt)
+{
+    public void Validate(){V2.Amount(AmountBits);V2.Decimal(ControlRevision);V2.Decimal(RetiredFrameOrdinal);V2.Require(ControlRevision is not null&&RetiredFrameOrdinal is not null&&ulong.Parse(ControlRevision)>0&&ulong.Parse(RetiredFrameOrdinal)>0&&Qualification=="retired_configuration","Qualified retired Blend readback required");V2.Text(Receipt,4096);}
+}
 public record OwnerPeerV2(string Role,string DeviceId,string? AppProcessGeneration,string? ProcessEpochId,string? NativeGeneration,string? NativeProcessGeneration,
     string? RuntimeConfigId,string? NativeSession,string? RunId,string? Mode,OwnerNativeFreshnessV2 NativeFreshness,string Receipt)
 {
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] public OwnerBlendAmountV2? BlendAmount {get;init;}
     public void Validate(){
+        if(BlendAmount is not null){V2.Require(Mode=="blend"&&HasActualIdentity,"Blend observation requires actual Blend peer");BlendAmount.Validate();}
         V2.Require(Role is "Q" or "W","Unsupported peer role");V2.Text(DeviceId,128);V2.Text(Receipt,4096);
         V2.Decimal(AppProcessGeneration);V2.Decimal(NativeGeneration);V2.Decimal(NativeProcessGeneration);V2.Opaque(ProcessEpochId);V2.Opaque(NativeSession);
         V2.Hex(RuntimeConfigId,64);V2.Hex(RunId,32);V2.Require(Mode is null or "own" or "peer" or "blend","Unsupported peer mode");
@@ -29,7 +36,7 @@ public sealed record OwnerPeerResultV2(string Role,string DeviceId,string? AppPr
     string? RuntimeConfigId,string? NativeSession,string? RunId,string? Mode,OwnerNativeFreshnessV2 NativeFreshness,string Receipt,string State):
     OwnerPeerV2(Role,DeviceId,AppProcessGeneration,ProcessEpochId,NativeGeneration,NativeProcessGeneration,RuntimeConfigId,NativeSession,RunId,Mode,NativeFreshness,Receipt)
 {
-    public OwnerPeerResultV2(OwnerPeerV2 peer,string state):this(peer.Role,peer.DeviceId,peer.AppProcessGeneration,peer.ProcessEpochId,peer.NativeGeneration,peer.NativeProcessGeneration,peer.RuntimeConfigId,peer.NativeSession,peer.RunId,peer.Mode,peer.NativeFreshness,peer.Receipt,state){}
+    public OwnerPeerResultV2(OwnerPeerV2 peer,string state):this(peer.Role,peer.DeviceId,peer.AppProcessGeneration,peer.ProcessEpochId,peer.NativeGeneration,peer.NativeProcessGeneration,peer.RuntimeConfigId,peer.NativeSession,peer.RunId,peer.Mode,peer.NativeFreshness,peer.Receipt,state){BlendAmount=peer.BlendAmount;}
 }
 public sealed record OwnerStatusV2(string Schema,string OwnerEpoch,long Revision,DateTimeOffset ObservedUtc,string? SelectionId,OwnerMember[] Members,
     string Phase,string? ActiveRequestId,bool ReconciliationRequired,OwnerReadinessV2 Readiness,OwnerPeerV2[] Peers,string Receipt)
@@ -64,9 +71,18 @@ public sealed record OwnerSelectionV2(string Schema,string RequestId,string Owne
 public sealed record OwnerRunRequestV2(string Kind,string? RunId);
 public sealed record OwnerActionV2(string Schema,string RequestId,string OwnerEpoch,string SelectionId,long ExpectedRevision,string Action,OwnerRunRequestV2? RunChoice,string? Mode)
 {
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] public uint? BlendAmountBits {get;init;}
+    public static OwnerActionV2 Read(byte[] bytes){
+        using var document=System.Text.Json.JsonDocument.Parse(bytes);
+        V2.Require(document.RootElement.ValueKind==System.Text.Json.JsonValueKind.Object,"Action object required");
+        if(document.RootElement.TryGetProperty("blendAmountBits",out var bits))
+            V2.Require(bits.ValueKind==System.Text.Json.JsonValueKind.Number&&Regex.IsMatch(bits.GetRawText(),"^(0|[1-9][0-9]*)$")&&bits.TryGetUInt32(out var number)&&number<=1065353216,"Integer Float32 Blend bits required");
+        return OwnerJson.Read<OwnerActionV2>(bytes);
+    }
     public void Validate(string epoch){
         V2.Require(Schema=="questms.owner.action.v2"&&OwnerEpoch==epoch,"Action identity differs");V2.Id(RequestId,true);V2.Id(SelectionId,true);V2.Revision(ExpectedRevision);
         V2.Require(V2.Actions.Contains(Action),"Unsupported product action");
+        if(BlendAmountBits is {} amount){V2.Amount(amount);V2.Require(Action=="mode"&&Mode=="blend"&&RunChoice is null,"Numeric amount belongs to an active Blend mode edit");}
         if(Action=="establish"){V2.Require(RunChoice is not null&&RunChoice.Kind is "new" or "resume","Explicit NewRun/ResumeRun choice required");if(RunChoice.Kind=="new")V2.Require(RunChoice.RunId is null,"NewRun ID belongs to owner");else V2.Hex(RunChoice.RunId,32,true);}
         else V2.Require(RunChoice is null,"Run choice belongs to establish");
         V2.Require(Action is "establish" or "mode"?Mode is "own" or "peer" or "blend":Mode is null,"Explicit closed mode required");
@@ -85,6 +101,8 @@ public sealed record OwnerResultV2(string Schema,string RequestId,string OwnerEp
 }
 internal static class V2
 {
+    internal const string BlendAccept="application/json; profile=\"questms.blend-amount-bits.v1\"",BlendFeature="blend_amount_bits_v1";
+    internal static void Amount(uint bits)=>Require(bits<=1065353216,"Float32 Blend amount outside [0,1]");
     internal static readonly string[] Actions=["establish","normalStop","whole","mode"],Modes=["own","peer","blend"];
     internal static void Require([System.Diagnostics.CodeAnalysis.DoesNotReturnIf(false)] bool value,string reason){if(!value)throw new InvalidDataException(reason);}
     internal static void Text(string? value,int max)=>Require(!string.IsNullOrWhiteSpace(value)&&value.Length<=max&&!value.Any(char.IsControl),"Bounded text required");
