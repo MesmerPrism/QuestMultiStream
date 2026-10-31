@@ -10,3 +10,6 @@ tools/scrcpy/
 *.user
 *.suo
 *.cache
+
+# Private HTTPS listener selections, certificates and password files live here.
+local/

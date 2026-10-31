@@ -99,7 +99,7 @@ internal static class OwnerV2Tests
         var config=Path.Combine(Path.GetTempPath(),"questms-route-"+Guid.NewGuid()+".json");
         File.WriteAllText(config,JsonSerializer.Serialize(new HubBridgeSelection("http://127.0.0.1:43123/operator",new string('k',43),"local","local",null,Epoch,2),HubControl.Json));
         using var bridge=new HubOwnerBridge(config,new Transport());using var lane=new SemaphoreSlim(1,1);bool idle=true;
-        OwnerV2Routes.Map(app,bridge,c=>c.Request.Query["token"]=="fixture",()=>"http://fixture-origin",lane,()=>idle);
+        OwnerV2Routes.Map(app,bridge,c=>c.Request.Query["token"]=="fixture",c=>"http://fixture-origin",lane,()=>idle);
         try{
             await app.StartAsync();using var client=new HttpClient{BaseAddress=new Uri(app.Urls.Single())};
             if((await client.GetAsync("/api/hub/v2/status")).StatusCode!=HttpStatusCode.Unauthorized)throw new Exception("Unauthorized route accepted");
@@ -117,14 +117,18 @@ internal static class OwnerV2Tests
     }
     internal static async Task ServeFixture(){
         var builder=WebApplication.CreateBuilder(new WebApplicationOptions{ContentRootPath=Directory.GetCurrentDirectory()});
-        builder.Configuration.Sources.Clear();builder.Logging.ClearProviders();builder.WebHost.ConfigureKestrel(o=>o.Listen(IPAddress.Loopback,0));
+        builder.Configuration.Sources.Clear();builder.Logging.ClearProviders();
+        // An explicit fixture port permits a machine coordination lease before binding.
+        var fixturePort=int.TryParse(Environment.GetEnvironmentVariable("QMS_FIXTURE_PORT"),out var selectedPort)?selectedPort:0;
+        if(fixturePort!=0&&fixturePort is <1024 or >65535)throw new InvalidDataException("Invalid fixture port");
+        builder.WebHost.ConfigureKestrel(o=>o.Listen(IPAddress.Loopback,fixturePort));
         await using var app=builder.Build();
         var config=Path.Combine(Path.GetTempPath(),"questms-render-"+Guid.NewGuid()+".json");
         File.WriteAllText(config,JsonSerializer.Serialize(new HubBridgeSelection("http://127.0.0.1:43123/operator",new string('k',43),"local","local",null,Epoch,2),HubControl.Json));
         using var bridge=new HubOwnerBridge(config,new Transport());using var lane=new SemaphoreSlim(1,1);
         try{
             app.UseDefaultFiles();app.UseStaticFiles();app.MapPost("/fixture-stop",()=>{app.Lifetime.StopApplication();return Results.Ok();});
-            OwnerV2Routes.Map(app,bridge,c=>c.Request.Query["token"]=="fixture",()=>app.Urls.Single(),lane,()=>true);
+            OwnerV2Routes.Map(app,bridge,c=>c.Request.Query["token"]=="fixture",c=>app.Urls.Single(),lane,()=>true);
             app.MapGet("/api/hub/capabilities",()=>Results.Json(new{protocolVersion=2,bridgeSelected=true,liveSupported=true,actions=V2.Actions}));
             app.MapGet("/api/sources",()=>Results.Json(Array.Empty<object>()));app.MapGet("/api/captures",()=>Results.Json(Array.Empty<object>()));
             await app.StartAsync();Console.WriteLine(app.Urls.Single()+"/#token=fixture");

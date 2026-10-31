@@ -445,3 +445,7 @@ capture failures and all owned capture/control/native lifecycle journals remain.
 Standing owners must drain stdout/stderr with immediate file visibility (for
 example a one-byte FileStream buffer) so the private startup URL can be consumed
 without depending on later request logging to flush a parent buffer.
+
+The same control hub can be installed as a standalone browser app; see
+[BROWSER_PWA.md](BROWSER_PWA.md) for authentication, platform installation and
+isolated fixture checks. Installation introduces no device or capture effects.
