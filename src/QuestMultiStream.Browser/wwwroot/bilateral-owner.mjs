@@ -2,6 +2,7 @@ import {captureModeLabel,populateCaptureModes} from './capture-mode.mjs';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const runId=/^[0-9a-f]{32}$/;
 const actions=['establish','normalStop','whole','mode'],modes=['own','peer','blend'];
+const modeLabels={own:'Own',peer:'Peer',blend:'Blend'};
 const labels={establish:'Start app streaming',normalStop:'Stop app streaming',whole:'Close app session',mode:'Change view mode'};
 export function bilateralModel(value,now=Date.now()){
  const unavailable={available:false,canEstablish:false,canNormalStop:false,canWhole:false,canMode:false,peers:[]};
@@ -43,24 +44,29 @@ export async function mountBilateralOwner({document,call,storage,token}){
  let current=null,inventory=null,runs=null,runInventoryStamp=null,prepared=null,busy=false,refreshingOwner=false,refreshingMirrors=false,sources=[],captures=[],selectionIntent=null;
  const disconnectedObservers=new Set();
  try{selectionIntent=JSON.parse(storage.getItem('questms-owner-v2-selection'));}catch{}
- $('pairSelection').hidden=false;$('runControls').hidden=false;$('sessionTitle').textContent='App session';$('refreshSession').textContent='Refresh status';
+ $('pairSelection').hidden=false;$('runControls').hidden=false;$('modeShortcuts').hidden=false;$('sessionTitle').textContent='App session';$('refreshSession').textContent='Refresh status';
  $('actionLabel').textContent='App action';$('observationDetailTitle').textContent='View mode';
  $('action').replaceChildren();for(const action of actions){const option=document.createElement('option');option.value=action;option.textContent=labels[action];$('action').append(option);}
  const say=text=>$('actionResult').textContent=text;
+ const requestLabel=request=>labels[request.action]+(request.mode?' · '+modeLabels[request.mode]:'');
+ const locked=()=>busy||!!controller.pending||!!selectionIntent;
  function ready(){const model=bilateralModel(current);return model[({establish:'canEstablish',normalStop:'canNormalStop',whole:'canWhole',mode:'canMode'})[$('action').value]]===true;}
  function choiceReady(){return $('action').value!=='establish'||$('runKind').value==='new'||$('runKind').value==='resume'&&runId.test($('resumeRun').value)&&runs?.selectionId===current?.selectionId&&runs.runs.some(r=>r.runId===$('resumeRun').value&&r.resumable);}
  function controls(){
-  const locked=busy||!!controller.pending||!!selectionIntent;
-  $('prepare').disabled=locked||!ready()||!choiceReady();
-  $('execute').disabled=locked||!prepared||prepared.selectionId!==current?.selectionId||prepared.expectedRevision!==current?.revision||!ready();
+  if(prepared&&(prepared.ownerEpoch!==current?.ownerEpoch||prepared.selectionId!==current?.selectionId||prepared.expectedRevision!==current?.revision)){
+   prepared=null;$('envelope').textContent='No request.';if(!controller.pending)say('Owner status changed · review the request again');
+  }
+  for(const mode of modes){const button=$('mode'+modeLabels[mode]);button.disabled=locked()||bilateralModel(current).canMode!==true;button.ariaPressed=String(prepared?.action==='mode'&&prepared.mode===mode);}
+  $('prepare').disabled=locked()||!ready()||!choiceReady();
+  $('execute').disabled=locked()||!prepared||!ready();
   if(!prepared)$('execute').textContent='Review request first';
-  $('selectPair').disabled=locked||!inventory||!!current?.activeRequestId||current?.reconciliationRequired===true;
+  $('selectPair').disabled=locked()||!inventory||!!current?.activeRequestId||current?.reconciliationRequired===true;
   $('runKind').parentElement.hidden=$('action').value!=='establish';
   $('resumeRun').parentElement.hidden=$('action').value!=='establish'||$('runKind').value!=='resume';
   $('viewMode').parentElement.hidden=!['establish','mode'].includes($('action').value);
   $('evidenceError').textContent=controller.pending?'Original request retained · readback continues without replay':selectionIntent?'Original selection retained · refresh current status to confirm the selected headsets':!ready()&&bilateralModel(current).available?'This action is unavailable in the current app session.':'';
  }
- for(const id of ['action','runKind','resumeRun','viewMode'])$(id).onchange=()=>{prepared=null;controls();};
+ for(const id of ['action','runKind','resumeRun','viewMode'])$(id).onchange=()=>{prepared=null;$('envelope').textContent='No request.';controls();};
  function render(){
   const model=bilateralModel(current);$('status').textContent=model.available?'Owner connected':'Owner unavailable';
   $('controller').textContent=model.available?'App session: '+model.phase+' · peer video not verified by this report':'App session status unknown';
@@ -112,8 +118,16 @@ export async function mountBilateralOwner({document,call,storage,token}){
   catch{say('Selection outcome unknown · original selection retained; refresh current status');}
   finally{busy=false;await refresh();}
  };
- $('actionForm').onsubmit=async event=>{event.preventDefault();if(busy||controller.pending||!ready()||!choiceReady())return;try{prepared=makeAction(current,$('action').value,$('runKind').value,$('resumeRun').value,$('viewMode').value,crypto.randomUUID());$('envelope').textContent=JSON.stringify(prepared,null,2);$('execute').textContent=labels[prepared.action];say('Request reviewed · owner checks current headsets before execution');}catch(error){say(error.message);}controls();};
- $('execute').onclick=async()=>{if(!prepared||busy||controller.pending||!ready())return;busy=true;controls();try{const value=await controller.execute(prepared);say('Request '+value.state+(value.actualEffectsCompleted?' · both headsets completed':' · completion unconfirmed'));prepared=null;}catch{say('Outcome unknown · original request retained; no retry');}finally{busy=false;await refresh();}};
+ function prepareRequest(){
+  if(locked()||!ready()||!choiceReady())return;
+  try{prepared=makeAction(current,$('action').value,$('runKind').value,$('resumeRun').value,$('viewMode').value,crypto.randomUUID());$('envelope').textContent=JSON.stringify(prepared,null,2);$('execute').textContent=requestLabel(prepared);say(requestLabel(prepared)+' reviewed · owner checks current headsets before execution');}catch(error){say(error.message);}controls();
+ }
+ $('actionForm').onsubmit=event=>{event.preventDefault();prepareRequest();};
+ for(const mode of modes)$('mode'+modeLabels[mode]).onclick=()=>{
+  if(locked()||bilateralModel(current).canMode!==true)return;
+  $('action').value='mode';$('viewMode').value=mode;prepareRequest();
+ };
+ $('execute').onclick=async()=>{controls();if($('execute').disabled)return;const request=prepared;busy=true;controls();try{const value=await controller.execute(request);say(requestLabel(request)+' · '+value.state+(value.actualEffectsCompleted?' · both headsets completed':' · completion unconfirmed'));prepared=null;}catch{say(requestLabel(request)+' outcome unknown · original request retained; no retry');}finally{busy=false;await refresh();}};
  for(const role of ['Q','W']){
   for(const action of ['start','stop']){const button=$(action+'Display'+role);button.hidden=false;button.textContent=action==='start'?'Start mirror':'Stop mirror';button.onclick=async()=>{const source=sourceFor(role);if(!source)return;button.disabled=true;try{const body={requestId:crypto.randomUUID()};if(action==='start')body.captureMode=$('captureMode'+role).value||'raw-two-lens';await call('/api/captures/'+encodeURIComponent(source.id)+'/'+action,{method:'POST',body:JSON.stringify(body)});}catch{$('displayState'+role).textContent='Mirror outcome unknown · inspect existing capture';}await refresh();};}
   $('disconnectDisplay'+role).hidden=false;$('disconnectDisplay'+role).onclick=()=>{

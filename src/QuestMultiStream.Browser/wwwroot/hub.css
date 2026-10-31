@@ -8,3 +8,5 @@
 
 .appAccess{max-width:1600px;margin:auto;padding:16px 26px 0}.appAccess details+details{margin-top:12px}.appAccess p{max-width:85ch}.appAccess input{min-width:0}.appAccess form label{flex:1;max-width:680px}#networkNotice{color:#ffb1a3}#installApp{margin-top:12px}.hub button,.hub select,.appAccess button,.appAccess input{min-height:44px}.appAccess summary{min-height:32px;padding:6px 0}header>div{min-width:0}header #status{max-width:none;overflow-wrap:anywhere}@media(max-width:550px){header{flex-wrap:wrap;padding:14px;align-items:start}.hostControls{max-width:100%;align-items:start}header #status{text-align:left}.appAccess{padding:14px 14px 0}.appAccess form{align-items:stretch}.appAccess form label{width:100%;flex-basis:100%}.hub form label{min-width:0}.hub button{max-width:100%;white-space:normal}.sessionHeading{flex-wrap:wrap}select,input{font-size:16px}}
 #stopMonitor{min-height:44px}
+
+#modeShortcuts .buttons{margin:8px 0 16px}#modeShortcuts button{min-width:88px}#modeShortcuts button[aria-pressed="true"]{border-color:#00e8ff}
