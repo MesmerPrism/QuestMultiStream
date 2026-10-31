@@ -3,7 +3,7 @@ namespace QuestMultiStream.Browser;
 // Shared by the production host and isolated HTTP controls. No capture effects.
 internal static class OwnerV2Routes
 {
-    internal static void Map(WebApplication app,HubOwnerBridge? bridge,Func<HttpContext,bool> authorized,Func<string> origin,SemaphoreSlim selectionLane,Func<bool> displaysIdle)
+    internal static void Map(WebApplication app,HubOwnerBridge? bridge,Func<HttpContext,bool> authorized,Func<HttpContext,string> origin,SemaphoreSlim selectionLane,Func<bool> displaysIdle)
     {
         async Task<IResult> Read(Func<HubOwnerBridge,Task<object>> operation,HttpContext context){
             if(!authorized(context))return Results.Unauthorized();
@@ -22,13 +22,13 @@ internal static class OwnerV2Routes
             return count>4096?null:buffer.AsSpan(0,count).ToArray();
         }
         app.MapPost("/api/hub/v2/actions",async(HttpContext c)=>{
-            if(!authorized(c)||c.Request.Headers.Origin!=origin())return Results.Unauthorized();
+            if(!authorized(c)||c.Request.Headers.Origin!=origin(c))return Results.Unauthorized();
             try{var body=await Body(c);if(body is null)return Results.BadRequest();var request=OwnerJson.Read<OwnerActionV2>(body);if(bridge?.ProtocolVersion!=2)return Results.StatusCode(503);return Results.Json(await bridge.ExecuteV2(request),OwnerJson.Options);}
             catch(Exception e)when(e is InvalidDataException or System.Text.Json.JsonException){return Results.BadRequest(new{error=e.Message});}
             catch{return Results.Json(new{error="Outcome unresolved; retain original request ID and read it without replay"},statusCode:502);}
         });
         app.MapPost("/api/hub/v2/selection",async(HttpContext c)=>{
-            if(!authorized(c)||c.Request.Headers.Origin!=origin())return Results.Unauthorized();
+            if(!authorized(c)||c.Request.Headers.Origin!=origin(c))return Results.Unauthorized();
             await selectionLane.WaitAsync(c.RequestAborted);try{
                 if(!displaysIdle())return Results.Conflict(new{error="Display owners remain active or unresolved"});
                 var body=await Body(c);if(body is null)return Results.BadRequest();

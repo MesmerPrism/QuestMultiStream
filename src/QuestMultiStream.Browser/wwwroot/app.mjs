@@ -65,7 +65,7 @@ $('connect').onclick=async()=>{
   if(!window.VideoDecoder){status('WebCodecs requires a supported browser and secure context');return;}
   policy=new DecoderPolicy();mirrorTiming=new MirrorTiming();timingReportAt=-Infinity;mirrorTiming.visibility(!document.hidden);
   if(!observeOnly){$('captureMode').disabled=true;const started=await fetch(`/api/captures/${encodeURIComponent(id)}/start?token=${encodeURIComponent(token)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:crypto.randomUUID(),captureMode:selectedMode})});if(!started.ok){status('Capture request denied: '+started.status);await refreshCaptureMode();return;}const state=await started.json();if(current!==generation)return;if(state.state==='stopping'||state.state==='unknown'){status('Capture is retiring or unresolved; wait for its actual cleanup');return;}}
-  socket=new WebSocket(`ws://${location.host}/observe/${encodeURIComponent(id)}?token=${encodeURIComponent(token)}`);socket.binaryType='arraybuffer';
+  socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/observe/${encodeURIComponent(id)}?token=${encodeURIComponent(token)}`);socket.binaryType='arraybuffer';
   socket.onopen=()=>status('Capture requested · waiting for video');
   socket.onmessage=async event=>{
     if(current!==generation)return;

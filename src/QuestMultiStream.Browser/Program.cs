@@ -7,6 +7,12 @@ using System.Text;
 using System.Text.Json;
 using QuestMultiStream.Browser;
 
+if (args.Contains("--https-self-test")) {
+    BrowserHttpsTests.Run();
+    if(args.Length==3)await BrowserHttpsTests.Http(int.Parse(args[1]),int.Parse(args[2]));
+    else if(args.Length!=1)throw new InvalidDataException("HTTPS self-test accepts explicit isolated HTTP and TLS ports");
+    return;
+}
 if (args.Contains("--self-test")) { await SelfTests.Run(); return; }
 if (args.Contains("--owner-v2-self-test")) { await OwnerV2Tests.Run(); return; }
 if (args.Contains("--owner-v2-fixture")) { await OwnerV2Tests.ServeFixture(); return; }
@@ -44,10 +50,11 @@ var portInput = Array.IndexOf(args, "--port");
 var port = portInput < 0 ? 43118 : int.Parse(args[portInput + 1]);
 if (port is < 1024 or > 65535) throw new InvalidOperationException("Port outside operator range");
 var origin = $"http://127.0.0.1:{port}";
-builder.WebHost.UseUrls(origin);
+using var https=BrowserHttpsEndpoint.Load(Option("--https-selection"));
+if(https is null)builder.WebHost.UseUrls(origin);else https.Configure(builder,port);
 var app = builder.Build();
 var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
-if (args.Length % 2 != 0 || args.Where((_,i)=>i%2==0).Any(a=>a is not "--selection" and not "--owned-selection" and not "--native-capture" and not "--capture-owner" and not "--fixture" and not "--host-end" and not "--port" and not "--hub-evidence" and not "--hub-bridge" and not "--hub-owner" and not "--hub-session-owner") || args.Where((_,i)=>i%2==0).Distinct().Count()!=args.Length/2)
+if (args.Length % 2 != 0 || args.Where((_,i)=>i%2==0).Any(a=>a is not "--selection" and not "--owned-selection" and not "--native-capture" and not "--capture-owner" and not "--fixture" and not "--host-end" and not "--https-selection" and not "--port" and not "--hub-evidence" and not "--hub-bridge" and not "--hub-owner" and not "--hub-session-owner") || args.Where((_,i)=>i%2==0).Distinct().Count()!=args.Length/2)
     throw new InvalidOperationException("Only explicit --selection, --fixture and --host-end inputs are accepted");
 string? Option(string key) { var i = Array.IndexOf(args,key); return i < 0 ? null : args[i+1]; }
 var selectionPath = Option("--selection");
@@ -107,10 +114,12 @@ using var captureOwner=captureConfig is null?null:new CaptureOwnerService(captur
 var captureWire=captureConfig is null?null:new CaptureOwnerTransport(captureConfig,captureOwner!,"127.0.0.1:"+port);
 
 _ = Task.Run(async () => { try { await Task.Delay(Timeout.Infinite, operatorStop.Token); } catch (OperationCanceledException) {} await MonitorLifetime.StopAfterRetirement(() => { lock(sync) return busy.Count == 0; }, app.Lifetime.StopApplication); });
+BrowserHttpsEndpoint.Guard(app,origin,https?.Selection);
 app.UseWebSockets(); app.UseDefaultFiles(); app.UseStaticFiles();
 if(captureWire is not null)app.MapMethods("/api/owner/{**capturePath}",["GET","POST"],captureWire.Handle);
+bool SameOrigin(HttpContext c)=>BrowserHttpsEndpoint.SameOrigin(c,origin,https?.Selection);
 bool Authorized(HttpContext c) => CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(c.Request.Query["token"].ToString()), Encoding.ASCII.GetBytes(token));
-OwnerV2Routes.Map(app,hubBridge,Authorized,()=>origin,ownerAdmission,()=>{lock(sync)return busy.Count==0;});
+OwnerV2Routes.Map(app,hubBridge,Authorized,c=>BrowserHttpsEndpoint.Origin(c,origin,https?.Selection),ownerAdmission,()=>{lock(sync)return busy.Count==0;});
 app.MapGet("/api/sources", (HttpContext c) => Authorized(c) ? Results.Json(owned is not null?owned.Sources.Select(s=>(object)new{id=s.SourceId,s.Label,displayId=0,crop=(string?)null,s.DeviceId,sourceKind="owned-rmanvid1-v1",captureModes=CaptureModes(s.SourceId)}):selection?.Sources.Select(s => new {s.Id, s.Label, s.DisplayId, s.Crop,deviceId=s.Canonical,captureModes=CaptureModes(s.Id)}) ?? []) : Results.Unauthorized());
 app.MapGet("/api/fixture", (HttpContext c) => Authorized(c) ? Results.Json(new { available = fixture is not null }) : Results.Unauthorized());
 app.MapGet("/api/hub/session", (HttpContext c) => Authorized(c) ? Results.Json(HubControl.SessionStatus(sessionProjection)) : Results.Unauthorized());
@@ -121,7 +130,7 @@ app.MapGet("/api/captures", (HttpContext c) => {
     return Results.Json(snapshot.Select(row=>new{id=row.Id,state=row.State,retirementPending=row.Held,captureMode=captureOwner is null?row.Mode:((captureOwner.Current(row.Id).Body as CaptureCurrent)?.Operation is {} operation?operation.Mode??NativeCaptureSelection.Raw:null),rawRead=row.RawRead}).ToArray());
 });
 app.MapPost("/api/captures/{id}/{action}", async (HttpContext c,string id,string action) => {
-    if(!Authorized(c)||c.Request.Headers.Origin!=origin)return Results.Unauthorized();
+    if(!Authorized(c)||!SameOrigin(c))return Results.Unauthorized();
     if(c.Request.ContentLength is null or >4096 || action is not "start" and not "stop")return Results.BadRequest();
     CaptureOperatorRequest? request;
     try {request=await JsonSerializer.DeserializeAsync<CaptureOperatorRequest>(c.Request.Body,HubControl.Json);}
@@ -172,7 +181,7 @@ app.MapPost("/api/captures/{id}/{action}", async (HttpContext c,string id,string
     }finally{ownerAdmission.Release();}
 });
 app.MapGet("/observe/{id}",async (HttpContext c,string id)=>{
-    if(!Authorized(c)||c.Request.Headers.Origin!=origin||!c.WebSockets.IsWebSocketRequest){c.Response.StatusCode=403;return;}
+    if(!Authorized(c)||!SameOrigin(c)||!c.WebSockets.IsWebSocketRequest){c.Response.StatusCode=403;return;}
     CaptureFanout? fanout;lock(sync)fanouts.TryGetValue(id,out fanout);
     if(fanout is null){c.Response.StatusCode=404;return;}
     using var socket=await c.WebSockets.AcceptWebSocketAsync();using var stop=new CancellationTokenSource();
@@ -194,7 +203,7 @@ app.MapGet("/api/hub/capabilities", (HttpContext c) => Authorized(c) ? Results.J
 app.MapGet("/api/hub/current",async(HttpContext c)=>{if(!Authorized(c))return Results.Unauthorized();try{return Results.Json(await (hubBridge??throw new InvalidDataException()).Current(),OwnerJson.Options);}catch{return Results.Json(new{error="Current owner unavailable; do not infer stopped"},statusCode:503);}});
 app.MapGet("/api/hub/devices",async(HttpContext c)=>{if(!Authorized(c))return Results.Unauthorized();try{return Results.Json(await (hubBridge??throw new InvalidDataException()).Devices(),OwnerJson.Options);}catch{return Results.Json(new{error="Device inventory unavailable"},statusCode:503);}});
 app.MapPost("/api/hub/selection",async(HttpContext c)=>{
-    if(!Authorized(c)||c.Request.Headers.Origin!=origin)return Results.Unauthorized();if(c.Request.ContentLength is null or >4096)return Results.BadRequest();
+    if(!Authorized(c)||!SameOrigin(c))return Results.Unauthorized();if(c.Request.ContentLength is null or >4096)return Results.BadRequest();
     await ownerAdmission.WaitAsync();try{
     lock(sync)if(busy.Count!=0)return Results.Conflict(new{error="Display owners remain active or unresolved"});
     try{using var body=new MemoryStream();await c.Request.Body.CopyToAsync(body);if(body.Length>4096)return Results.BadRequest();return Results.Json(await (hubBridge??throw new InvalidDataException()).Select(OwnerJson.Read<OwnerSelectionRequest>(body.ToArray())),OwnerJson.Options);}catch{return Results.Json(new{error="Selection unresolved or denied; read current owner"},statusCode:409);}
@@ -208,7 +217,7 @@ app.MapGet("/api/hub/actions/{requestId}", async (HttpContext c,string requestId
     catch (Exception e) when (e is IOException or HttpRequestException or TaskCanceledException) { return Results.Json(new { error="Owner readback unavailable; original action remains owned" },statusCode:502); }
 });
 app.MapPost("/api/hub/actions", async (HttpContext c) => {
-    if (!Authorized(c) || c.Request.Headers.Origin != origin) return Results.Unauthorized();
+    if (!Authorized(c) || !SameOrigin(c)) return Results.Unauthorized();
     if(sessionProjection is not null)return Results.Json(new {error="Read-only member session; pair actions unavailable"},statusCode:409);
     if (c.Request.ContentLength is null or > 4096) return Results.BadRequest(new { error = "Bounded JSON request required" });
     try {
@@ -223,10 +232,10 @@ app.MapPost("/api/hub/actions", async (HttpContext c) => {
       catch (Exception e) when (e is IOException or HttpRequestException or TaskCanceledException) { return Results.Json(new { error = "Owner outcome unresolved; do not retry with a new request ID", detail = e.GetType().Name }, statusCode:502); }
 });
 app.MapGet("/fixture", (HttpContext c) => Authorized(c) && fixture is not null ? Results.File(fixture, "video/mp4", enableRangeProcessing: true) : Results.NotFound());
-app.MapPost("/operator-stop", (HttpContext c) => { if (!Authorized(c) || c.Request.Headers.Origin != origin) return Results.Unauthorized(); operatorStop.Cancel(); return Results.Accepted(value: new { state = "requested", actual_retirement_pending = true }); });
+app.MapPost("/operator-stop", (HttpContext c) => { if (!Authorized(c) || !SameOrigin(c)) return Results.Unauthorized(); operatorStop.Cancel(); return Results.Accepted(value: new { state = "requested", actual_retirement_pending = true }); });
 app.MapGet("/stream/{id}", async (HttpContext context, string id) =>
 {
-    if (!Authorized(context) || context.Request.Headers.Origin != origin || !context.WebSockets.IsWebSocketRequest)
+    if (!Authorized(context) || !SameOrigin(context) || !context.WebSockets.IsWebSocketRequest)
     { context.Response.StatusCode = 403; return; }
     var source = selection?.Sources.SingleOrDefault(s => s.Id == id);
     if(hostEnd is not null && DateTimeOffset.UtcNow >= hostEnd){context.Response.StatusCode=410;return;}
@@ -244,6 +253,7 @@ app.MapGet("/stream/{id}", async (HttpContext context, string id) =>
     finally { lock(sync){busy.Remove(id);captureStops.Remove(id);captureStates[id]="retired";} }
 });
 Console.WriteLine($"Browser viewer: {origin}/#token={token}");
+if(https is not null)Console.WriteLine($"HTTPS browser viewer: {https.Selection.Origin}/#token={token}");
 Console.WriteLine(selection is null ? "OFFLINE: file/window fallback only; no ADB/device operations" : "Explicit selected device capture; lifecycle EOF only, no input events, audio, wake or retries");
 if(hostEnd is not null) _ = Task.Run(async()=>{
     await Task.Delay(hostEnd.Value-DateTimeOffset.UtcNow);
