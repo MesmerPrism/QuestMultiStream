@@ -67,7 +67,7 @@ export class BilateralController{
  }
  async reconcile(){if(!this.pending)return null;return this.result(await this.call('/api/hub/v2/actions/'+encodeURIComponent(this.pending.requestId),this.pending.blendAmountBits===undefined?undefined:blendRead));}
 }
-export async function mountBilateralOwner({document,call,storage,token}){
+export async function mountBilateralOwner({document,call,storage,token,viewerUrl=(pane,source)=>'viewer.html?pane='+pane+'&observe=1&source='+encodeURIComponent(source)+'#token='+encodeURIComponent(token)}){
  const $=id=>document.getElementById(id),controller=new BilateralController(call,storage);
  let current=null,inventory=null,runs=null,runInventoryStamp=null,prepared=null,busy=false,refreshingOwner=false,refreshingMirrors=false,sources=[],captures=[],selectionIntent=null;
  const disconnectedObservers=new Set();
@@ -128,7 +128,7 @@ export async function mountBilateralOwner({document,call,storage,token}){
   $('startDisplay'+role).disabled=!source||capture?.retirementPending===true||['requested','connected','unknown','stopping'].includes(capture?.state);
   $('stopDisplay'+role).disabled=!source||capture?.retirementPending!==true||capture.state==='unknown';
   feed.hidden=!(source&&!disconnectedObservers.has(role)&&['requested','connected'].includes(capture?.state));
-  if(!feed.hidden){if(feed.dataset.source!==source.id){feed.dataset.source=source.id;feed.src='viewer.html?pane='+role+'&observe=1&source='+encodeURIComponent(source.id)+'#token='+encodeURIComponent(token);}}
+  if(!feed.hidden){if(feed.dataset.source!==source.id){feed.dataset.source=source.id;feed.src=viewerUrl(role,source.id,true);}}
   else if(feed.dataset.source){delete feed.dataset.source;feed.src='about:blank';}
  }}
  async function refreshOwner(){if(refreshingOwner)return;refreshingOwner=true;

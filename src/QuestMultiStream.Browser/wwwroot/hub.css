@@ -11,3 +11,4 @@
 
 #modeShortcuts .buttons{margin:8px 0 16px}#modeShortcuts button{min-width:88px}#modeShortcuts button[aria-pressed="true"]{border-color:#00e8ff}
 #blendAmountEditor{max-width:440px;margin-bottom:16px}#blendAmountEditor input{min-height:44px;font-size:16px}
+#trustedLanWarning{flex-basis:100%;max-width:85ch;display:flex;align-items:flex-start;gap:10px;font-size:13px;line-height:1.5}#trustedLanConsent{flex:none;display:inline-block;width:20px;min-height:20px;height:20px;margin:0;accent-color:#00e8ff}

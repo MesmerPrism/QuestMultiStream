@@ -7,6 +7,12 @@ using System.Text;
 using System.Text.Json;
 using QuestMultiStream.Browser;
 
+if(args.Contains("--gateway-self-test")) {
+    await BrowserGatewayTests.Run();
+    if(args.Length==3)await BrowserGatewayTests.Http(int.Parse(args[1]),int.Parse(args[2]));
+    else if(args.Length!=1)throw new InvalidDataException("Gateway self-test accepts two distinct explicit isolated loopback ports");
+    return;
+}
 if (args.Contains("--https-self-test")) {
     BrowserHttpsTests.Run();
     if(args.Length==3)await BrowserHttpsTests.Http(int.Parse(args[1]),int.Parse(args[2]));
@@ -38,6 +44,10 @@ if(args.Contains("--hub-action")) {
     Console.WriteLine(JsonSerializer.Serialize(await handler.Handle(request),HubControl.Json));
     return;
 }
+if (args.Length % 2 != 0 || args.Where((_,i)=>i%2==0).Any(a=>a is not "--selection" and not "--owned-selection" and not "--native-capture" and not "--capture-owner" and not "--fixture" and not "--host-end" and not "--https-selection" and not "--gateway-selection" and not "--port" and not "--hub-evidence" and not "--hub-bridge" and not "--hub-owner" and not "--hub-session-owner") || args.Where((_,i)=>i%2==0).Distinct().Count()!=args.Length/2)
+    throw new InvalidOperationException("Only explicit host selections are accepted");
+string? Option(string key) { var i = Array.IndexOf(args,key); return i < 0 ? null : args[i+1]; }
+if(Option("--https-selection") is not null&&Option("--gateway-selection") is not null)throw new InvalidDataException("Choose HTTPS or public application gateway selection");
 using var operatorStop = new CancellationTokenSource();
 var builder = WebApplication.CreateBuilder(args);
 // Routine request/static-file information includes query authentication tokens
@@ -51,12 +61,10 @@ var port = portInput < 0 ? 43118 : int.Parse(args[portInput + 1]);
 if (port is < 1024 or > 65535) throw new InvalidOperationException("Port outside operator range");
 var origin = $"http://127.0.0.1:{port}";
 using var https=BrowserHttpsEndpoint.Load(Option("--https-selection"));
-if(https is null)builder.WebHost.UseUrls(origin);else https.Configure(builder,port);
+var gateway=BrowserGatewayEndpoint.Load(Option("--gateway-selection"));
+if(gateway is not null)gateway.Configure(builder,port);else if(https is null)builder.WebHost.UseUrls(origin);else https.Configure(builder,port);
 var app = builder.Build();
 var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
-if (args.Length % 2 != 0 || args.Where((_,i)=>i%2==0).Any(a=>a is not "--selection" and not "--owned-selection" and not "--native-capture" and not "--capture-owner" and not "--fixture" and not "--host-end" and not "--https-selection" and not "--port" and not "--hub-evidence" and not "--hub-bridge" and not "--hub-owner" and not "--hub-session-owner") || args.Where((_,i)=>i%2==0).Distinct().Count()!=args.Length/2)
-    throw new InvalidOperationException("Only explicit --selection, --fixture and --host-end inputs are accepted");
-string? Option(string key) { var i = Array.IndexOf(args,key); return i < 0 ? null : args[i+1]; }
 var selectionPath = Option("--selection");
 using var selectionLock = selectionPath is null ? null : File.Open(selectionPath, FileMode.Open, FileAccess.Read, FileShare.Read);
 HostSelection? selection = selectionPath is null ? null : JsonSerializer.Deserialize<HostSelection>(File.ReadAllText(selectionPath), new JsonSerializerOptions { Converters = { new StrictUtcDateConverter() } });
@@ -115,11 +123,11 @@ var captureWire=captureConfig is null?null:new CaptureOwnerTransport(captureConf
 
 _ = Task.Run(async () => { try { await Task.Delay(Timeout.Infinite, operatorStop.Token); } catch (OperationCanceledException) {} await MonitorLifetime.StopAfterRetirement(() => { lock(sync) return busy.Count == 0; }, app.Lifetime.StopApplication); });
 BrowserHttpsEndpoint.Guard(app,origin,https?.Selection);
-app.UseWebSockets(); app.UseDefaultFiles(); app.UseStaticFiles();
+app.UseWebSockets();gateway?.Guard(app,origin,token);app.UseDefaultFiles(); app.UseStaticFiles();
 if(captureWire is not null)app.MapMethods("/api/owner/{**capturePath}",["GET","POST"],captureWire.Handle);
-bool SameOrigin(HttpContext c)=>BrowserHttpsEndpoint.SameOrigin(c,origin,https?.Selection);
-bool Authorized(HttpContext c) => CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(c.Request.Query["token"].ToString()), Encoding.ASCII.GetBytes(token));
-OwnerV2Routes.Map(app,hubBridge,Authorized,c=>BrowserHttpsEndpoint.Origin(c,origin,https?.Selection),ownerAdmission,()=>{lock(sync)return busy.Count==0;});
+bool SameOrigin(HttpContext c)=>gateway?.IsSelected(c)==true?gateway.SameOrigin(c):BrowserHttpsEndpoint.SameOrigin(c,origin,https?.Selection);
+bool Authorized(HttpContext c) => gateway?.IsSelected(c)==true?gateway.Authorized(c,token):CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(c.Request.Query["token"].ToString()), Encoding.ASCII.GetBytes(token));
+OwnerV2Routes.Map(app,hubBridge,Authorized,c=>gateway?.IsSelected(c)==true?gateway.Selection.Origin:BrowserHttpsEndpoint.Origin(c,origin,https?.Selection),ownerAdmission,()=>{lock(sync)return busy.Count==0;});
 app.MapGet("/api/sources", (HttpContext c) => Authorized(c) ? Results.Json(owned is not null?owned.Sources.Select(s=>(object)new{id=s.SourceId,s.Label,displayId=0,crop=(string?)null,s.DeviceId,sourceKind="owned-rmanvid1-v1",captureModes=CaptureModes(s.SourceId)}):selection?.Sources.Select(s => new {s.Id, s.Label, s.DisplayId, s.Crop,deviceId=s.Canonical,captureModes=CaptureModes(s.Id)}) ?? []) : Results.Unauthorized());
 app.MapGet("/api/fixture", (HttpContext c) => Authorized(c) ? Results.Json(new { available = fixture is not null }) : Results.Unauthorized());
 app.MapGet("/api/hub/session", (HttpContext c) => Authorized(c) ? Results.Json(HubControl.SessionStatus(sessionProjection)) : Results.Unauthorized());
@@ -254,6 +262,7 @@ app.MapGet("/stream/{id}", async (HttpContext context, string id) =>
 });
 Console.WriteLine($"Browser viewer: {origin}/#token={token}");
 if(https is not null)Console.WriteLine($"HTTPS browser viewer: {https.Selection.Origin}/#token={token}");
+if(gateway is not null)Console.WriteLine($"Public browser viewer: {gateway.Selection.PublicAppUrl}#gateway={Uri.EscapeDataString(gateway.Selection.GatewayOrigin)}&token={token}");
 Console.WriteLine(selection is null ? "OFFLINE: file/window fallback only; no ADB/device operations" : "Explicit selected device capture; lifecycle EOF only, no input events, audio, wake or retries");
 if(hostEnd is not null) _ = Task.Run(async()=>{
     await Task.Delay(hostEnd.Value-DateTimeOffset.UtcNow);

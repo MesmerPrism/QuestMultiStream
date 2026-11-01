@@ -6,6 +6,73 @@ service worker, offline shell, mutation queue, credential cache or saved media.
 Installation does not start a capture, select devices, replay an Original or
 grant control. The existing authenticated operator and owner contracts apply.
 
+The optional public export at `/bilateral-control/` has a separate installation
+identity and a static-only service worker. Its connection and transport differ
+from the directly hosted root, as described below.
+
+## Public HTTPS app with a private gateway
+
+The public [Bilateral Control app](https://mesmerprism.com/bilateral-control/)
+loads its shell from trusted HTTPS. The PC host can separately expose one
+explicit private HTTP/WebSocket gateway. Supported Chrome local-network
+permission lets the HTTPS document reach that gateway without importing a
+development CA. Browser support and physical phone qualification are separate
+from source conformance; permission denial or unsupported transport must remain
+an unavailable connection.
+
+Start the host with its existing owner/bridge selections and loopback `--port`,
+plus `--gateway-selection <absolute-private-json>`. The strict JSON fields are:
+
+| Field | Value |
+| --- | --- |
+| `listenAddress` | One canonical private or loopback IPv4 belonging to this PC |
+| `port` | One reserved port from 1024 through 65535, distinct from the loopback listener |
+| `publicAppUrl` | The exact HTTPS app URL, for example `https://mesmerprism.com/bilateral-control/` |
+
+Keep the selection under private ignored local storage. Gateway and direct
+HTTPS selection are mutually exclusive. Selection replaces inherited listener
+configuration with the two explicit endpoints; it does not configure a firewall,
+router, device or certificate store. The private HMAC `/api/owner` surface stays
+on its original numeric-loopback endpoint and is denied on the gateway.
+
+The host prints a private public-app operator link with gateway and ephemeral
+token in its fragment. Paste it into **Connect operator link**, acknowledge the
+trusted-LAN warning, and press Connect. This is plaintext LAN transport with no
+confidentiality: use only a trusted network. The public page itself remains
+HTTPS, including its mirror viewer. REST uses the bearer header; authenticated
+mirror WebSockets use the private gateway URL. Both need the exact selected
+HTTPS Origin. The app path is an installation identity, not an Origin boundary.
+Any page on that selected origin also needs the secret token to authenticate.
+
+The form masks and clears the link and promptly removes URL fragments. Tokens,
+consent and retained Original metadata use app- and gateway-scoped session
+storage. A fresh fragment alone sends no request. A reload can recover by GET
+only when the same session has consent and the browser reports local-network
+permission granted; otherwise Connect is required again. Neither reload,
+reconnect, installation nor service-worker activation replays a mutation.
+
+The exported manifest ID, scope and start URL are `/bilateral-control/`.
+Its worker caches only the finite exported static shell, using its own versioned
+cache prefix. It excludes query-bearing, cross-origin, API, authenticated,
+media and non-GET traffic. An available cached shell does not establish live
+owner status. Other MesmerPrism app installations and caches are independent.
+
+The Browser source owns the public assets. Export them to a dedicated website
+`bilateral-control` directory using `tools/Export-PublicBilateralPwa.ps1
+-DestinationPath <directory>`; use `-Check` to verify exact bytes. Commit source
+first, then export, so `export-manifest.json` identifies the source revision and
+hashes. The exporter refuses unknown destination files and never exports tests,
+private selections, secrets, device identities or binaries.
+
+Run `tools/Test-PublicPwaGateway.ps1` for the build, pure boundary tests and Node
+tests. Add `-HttpPort <reserved-port> -GatewayPort <reserved-port>` for actual
+isolated Kestrel HTTP/WS and sequential direct-TLS conformance. These tests
+start no device, capture or private owner worker. In the website, run
+`python tools/test_bilateral_control.py --source-root <QuestMultiStream-root>`
+to check export provenance, behavior, scope and sibling-app isolation.
+
+Reference: [Chrome local network access](https://developer.chrome.com/docs/modern-web-guidance/guides/security/local-network-access).
+
 ## Install and reconnect
 
 Use Edge or Chrome on Windows, or Chrome on Android, and choose **Install app**
@@ -134,7 +201,7 @@ its original numeric-loopback Host/HMAC contract remains on HTTP. Mirrors use
 `wss://` under HTTPS and `ws://` under loopback HTTP. Existing API, bridge,
 Original request, capture and media contracts remain unchanged.
 
-Tomorrow, first open the HTTPS address in each physical phone's browser and
+For this direct HTTPS route, first open the address in each physical phone's browser and
 verify a valid trusted connection with no certificate warning. If using a
 private CA, provision only the deliberately chosen CA through the platform's
 normal trust process; iPhone may require explicit full trust for a manually
