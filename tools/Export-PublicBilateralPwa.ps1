@@ -6,7 +6,6 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $sourceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$sourceDirectory = Join-Path $sourceRoot 'src/QuestMultiStream.Browser/wwwroot'
 $destination = [IO.Path]::GetFullPath($DestinationPath)
 if ([IO.Path]::GetFileName($destination.TrimEnd([IO.Path]::DirectorySeparatorChar)) -cne 'bilateral-control') {
     throw 'Destination must be a dedicated bilateral-control directory.'
@@ -19,10 +18,44 @@ $assets = @(
     'icons/apple-touch-icon.png', 'icons/quest-multi-stream-192.png',
     'icons/quest-multi-stream-512.png'
 ) | Sort-Object -CaseSensitive
+# Preserve the existing HTML decoder's replacement behavior for legacy text bytes.
 $utf8 = [Text.UTF8Encoding]::new($false)
 function Get-BytesHash([byte[]]$Bytes) {
     return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
+function Get-CommittedBytes([string]$Revision, [string]$RelativePath) {
+    $start = [Diagnostics.ProcessStartInfo]::new('git')
+    $start.UseShellExecute = $false
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    foreach ($argument in @('-C', $sourceRoot, 'show', ($Revision + ':' + $RelativePath))) {
+        $start.ArgumentList.Add($argument)
+    }
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $start
+    $buffer = [IO.MemoryStream]::new()
+    try {
+        if (!$process.Start()) { throw 'Cannot start Git blob reader.' }
+        $errorRead = $process.StandardError.ReadToEndAsync()
+        # A PowerShell text pipeline would decode/re-encode or normalize blob bytes.
+        $process.StandardOutput.BaseStream.CopyTo($buffer)
+        $process.WaitForExit()
+        $gitError = $errorRead.GetAwaiter().GetResult()
+        if ($process.ExitCode -ne 0) { throw "Cannot read committed source blob: $RelativePath ($gitError)" }
+        return ,$buffer.ToArray()
+    } finally {
+        $buffer.Dispose()
+        $process.Dispose()
+    }
+}
+function ConvertTo-PublicTextBytes([byte[]]$Bytes) {
+    return ,$utf8.GetBytes($utf8.GetString($Bytes).Replace("`r`n", "`n"))
+}
+# Projection is from a reviewed commit, never from incidental checkout bytes.
+$revision = & git -C $sourceRoot rev-parse HEAD
+if ($LASTEXITCODE -ne 0 -or $revision -cnotmatch '^[0-9a-f]{40}$') { throw 'Cannot read owner source revision.' }
+$sourceStatus = & git -C $sourceRoot status --porcelain=v1 --untracked-files=all
+if ($LASTEXITCODE -ne 0 -or $sourceStatus) { throw 'Commit the owner source changes before exporting; a clean committed source is required.' }
 # Fail before writing if the destination contains anything outside the finite projection.
 if (Test-Path -LiteralPath $destination) {
     if ((Get-Item -LiteralPath $destination).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Destination cannot be a link.' }
@@ -35,20 +68,28 @@ if (Test-Path -LiteralPath $destination) {
     }
 }
 $sourceInventory = @{}
+$sourceBytes = @{}
+$canonicalHashes = @{}
 foreach ($asset in $assets) {
-    $path = Join-Path $sourceDirectory $asset
-    if (!(Test-Path -LiteralPath $path -PathType Leaf) -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "Missing or linked source asset: $asset" }
-    $sourceInventory[$asset] = Get-BytesHash ([IO.File]::ReadAllBytes($path))
+    $bytes = Get-CommittedBytes $revision ('src/QuestMultiStream.Browser/wwwroot/' + $asset)
+    $sourceInventory[$asset] = Get-BytesHash $bytes
+    if ([IO.Path]::GetExtension($asset) -cne '.png') { $bytes = ConvertTo-PublicTextBytes $bytes }
+    $sourceBytes[$asset] = $bytes
+    $canonicalHashes[$asset] = Get-BytesHash $bytes
 }
-$exporterHash = Get-BytesHash ([IO.File]::ReadAllBytes($PSCommandPath))
+$exporterBytes = Get-CommittedBytes $revision 'tools/Export-PublicBilateralPwa.ps1'
+$exporterHash = Get-BytesHash $exporterBytes
+if ((Get-BytesHash (ConvertTo-PublicTextBytes ([IO.File]::ReadAllBytes($PSCommandPath)))) -cne (Get-BytesHash (ConvertTo-PublicTextBytes $exporterBytes))) {
+    throw 'The executing exporter must match the committed owner exporter.'
+}
 # Transform changes (for example generated HTML) must also invalidate the shell.
-$versionInput = $exporterHash + "`n" + (($assets | ForEach-Object { $_ + ':' + $sourceInventory[$_] }) -join "`n")
+$versionInput = $exporterHash + "`n" + (($assets | ForEach-Object { $_ + ':' + $canonicalHashes[$_] }) -join "`n")
 $version = Get-BytesHash ($utf8.GetBytes($versionInput))
 $scope = '/bilateral-control/'
 $staticPaths = @($scope) + @($assets | Where-Object { $_ -cne 'public-sw.mjs' } | ForEach-Object { $scope + $_ })
 $outputs = @{}
 foreach ($asset in $assets) {
-    $bytes = [IO.File]::ReadAllBytes((Join-Path $sourceDirectory $asset))
+    $bytes = $sourceBytes[$asset]
     if ($asset -cin @('index.html', 'viewer.html')) {
         $html = $utf8.GetString($bytes).Replace('<html lang="en">', '<html lang="en" data-public-gateway="true">')
         if (!$html.Contains('data-public-gateway="true"')) { throw 'HTML public-mode marker was not applied.' }
@@ -69,10 +110,10 @@ foreach ($asset in $assets) {
         $worker = $worker.Replace('const STATIC_PATHS=[];', 'const STATIC_PATHS=' + (ConvertTo-Json -InputObject $staticPaths -Compress) + ';')
         $bytes = $utf8.GetBytes($worker)
     }
+    # JSON serialization itself uses platform newlines; normalize AFTER every transform.
+    if ([IO.Path]::GetExtension($asset) -cne '.png') { $bytes = ConvertTo-PublicTextBytes $bytes }
     $outputs[$asset] = $bytes
 }
-$revision = & git -C $sourceRoot rev-parse HEAD
-if ($LASTEXITCODE -ne 0 -or $revision -cnotmatch '^[0-9a-f]{40}$') { throw 'Cannot read owner source revision.' }
 $files = @($assets | ForEach-Object { [ordered]@{ path = $_; sha256 = (Get-BytesHash $outputs[$_]); sourcePath = 'src/QuestMultiStream.Browser/wwwroot/' + $_; sourceSha256 = $sourceInventory[$_] } })
 $export = [ordered]@{
     schema = 'questms.public-bilateral-export.v1'
@@ -83,7 +124,7 @@ $export = [ordered]@{
     cacheVersion = $version
     files = $files
 }
-$outputs['export-manifest.json'] = $utf8.GetBytes(($export | ConvertTo-Json -Depth 12) + "`n")
+$outputs['export-manifest.json'] = ConvertTo-PublicTextBytes ($utf8.GetBytes(($export | ConvertTo-Json -Depth 12) + "`n"))
 foreach ($name in @($assets) + @('export-manifest.json')) {
     $target = Join-Path $destination $name
     if ($Check) {

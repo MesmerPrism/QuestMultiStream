@@ -61,15 +61,23 @@ The Browser source owns the public assets. Export them to a dedicated website
 `bilateral-control` directory using `tools/Export-PublicBilateralPwa.ps1
 -DestinationPath <directory>`; use `-Check` to verify exact bytes. Commit source
 first, then export, so `export-manifest.json` identifies the source revision and
-hashes. The exporter refuses unknown destination files and never exports tests,
-private selections, secrets, device identities or binaries.
+hashes. The exporter requires a clean committed owner checkout and reads assets
+and its own provenance from that commit's Git blobs. Exported text uses LF
+line endings, including generated JSON and HTML, so checkout settings cannot
+change the deployed byte hashes. PNGs retain their exact committed bytes.
+The exporter refuses dirty source and unknown destination files, and never
+exports tests, private selections, secrets, device identities or binaries.
 
 Run `tools/Test-PublicPwaGateway.ps1` for the build, pure boundary tests and Node
 tests. Add `-HttpPort <reserved-port> -GatewayPort <reserved-port>` for actual
 isolated Kestrel HTTP/WS and sequential direct-TLS conformance. These tests
 start no device, capture or private owner worker. In the website, run
-`python tools/test_bilateral_control.py --source-root <QuestMultiStream-root>`
-to check export provenance, behavior, scope and sibling-app isolation.
+`python tools/test_bilateral_control.py --source-root <QuestMultiStream-root>
+--require-committed` after committing the website projection to check export
+provenance, LF/CRLF checkout portability, committed bytes, scope and sibling-app
+isolation. Deployment readback must compare the served bytes to those committed
+blobs; a clean worktree alone does not prove byte equality under Git text
+normalization.
 
 Reference: [Chrome local network access](https://developer.chrome.com/docs/modern-web-guidance/guides/security/local-network-access).
 
