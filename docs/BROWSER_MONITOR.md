@@ -306,6 +306,21 @@ forward/JAR cleanup; a closed lifecycle socket is not a retirement receipt.
 An incomplete startup handshake or a blocked Android capture shutdown may
 remain HELD. No timer fabricates completion or repeats the capture.
 
+The raw profile also passes the single typed server argument
+`video_codec_options=frame-rate:int=30,i-frame-interval:int=1`, alongside
+`max_fps=30`. scrcpy3.3.4 sets a 60fps encoder hint and 10-second keyframe interval
+before applying these explicit integer overrides; see its
+[format construction](https://github.com/Genymobile/scrcpy/blob/v3.3.4/server/src/main/java/com/genymobile/scrcpy/video/SurfaceEncoder.java#L234-L259)
+and [codec-option parser](https://github.com/Genymobile/scrcpy/blob/v3.3.4/server/src/main/java/com/genymobile/scrcpy/util/CodecOption.java#L64-L102).
+The requested cadence is approximately one keyframe per 30 frames, or one second
+at 30fps, to shorten observer bootstrap and decoder recovery waits. This is an
+encoder configuration request, not an IDR control message or a guaranteed
+hardware interval. [Android documents](https://developer.android.com/reference/android/media/MediaFormat#KEY_I_FRAME_INTERVAL)
+that encoders may translate the interval into a frame count, so elapsed spacing
+depends on actual input rate and codec behavior. Verify actual keyframe arrivals
+and viewer recovery on the selected device; this profile alone does not qualify
+uninterrupted delivery or explain a prior stall.
+
 This follows the pinned upstream
 [connection order](https://github.com/Genymobile/scrcpy/blob/v3.3.4/server/src/main/java/com/genymobile/scrcpy/device/DesktopConnection.java),
 [controller EOF handling](https://github.com/Genymobile/scrcpy/blob/v3.3.4/server/src/main/java/com/genymobile/scrcpy/control/Controller.java)
