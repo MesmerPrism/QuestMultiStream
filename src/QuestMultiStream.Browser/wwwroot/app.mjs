@@ -43,18 +43,18 @@ function resetDecoder(current){
 }
 document.addEventListener('visibilitychange',()=>{mirrorTiming?.visibility(!document.hidden);if(socket&&policy){policy.paused=true;policy.waitingKey=true;resetDecoder(generation);status(document.hidden?'Viewer hidden · decoding paused':'Viewer visible · waiting for next keyframe on the same capture');}});
 function status(text){$('status').textContent=text;}
+function sizeCanvas(target,w,h){if(target.width!==w)target.width=w;if(target.height!==h)target.height=h;}
 function draw(image,w,h){
   let rect={x:0,y:0,w,h};const view=presentationView($('view').value,layout);
   if(view==='left'||view==='right')rect=eyeRects(w,h)[view==='left'?0:1];
   if(view==='crop')rect=cropRect(w,h,$('crop').value);
-  canvas.width=rect.w;canvas.height=rect.h;ctx.drawImage(image,rect.x,rect.y,rect.w,rect.h,0,0,rect.w,rect.h);
   if(view==='composite'){
-    const [a,b]=eyeRects(w,h);scratch.width=w;scratch.height=h;sctx.drawImage(image,0,0,w,h);
-    const left=sctx.getImageData(a.x,a.y,a.w,a.h),right=sctx.getImageData(b.x,b.y,b.w,b.h);canvas.width=a.w;canvas.height=a.h;
+    const [a,b]=eyeRects(w,h);sizeCanvas(canvas,a.w,a.h);sizeCanvas(scratch,w,h);sctx.drawImage(image,0,0,w,h);
+    const left=sctx.getImageData(a.x,a.y,a.w,a.h),right=sctx.getImageData(b.x,b.y,b.w,b.h);
     for(let y=0;y<a.h;y++)for(let x=0;x<a.w;x++){
       const i=(y*a.w+x)*4,p=blendPixel(left.data.subarray(i,i+4),right.data.subarray(i,i+4),x/Math.max(1,a.w-1));left.data.set(p,i);
     }ctx.putImageData(left,0,0);
-  }
+  }else{sizeCanvas(canvas,rect.w,rect.h);ctx.drawImage(image,rect.x,rect.y,rect.w,rect.h,0,0,rect.w,rect.h);}
   canvas.style.aspectRatio=`${canvas.width} / ${canvas.height}`;
   const resumed=decodedStatus(mode,streamError,socket?.readyState===WebSocket.OPEN,w,h);if(resumed)status(resumed);else if(mode==='Mirror observer'&&!streamError&&socket?.readyState===WebSocket.OPEN)status('Headset mirror · decoded frames');
   $('empty').hidden=true;frames++;frameTime=performance.now();mirrorTiming?.draw();$('metrics').textContent=`${w} × ${h} source · ${frames} decoded frames · ${mode}`+timingMetrics();

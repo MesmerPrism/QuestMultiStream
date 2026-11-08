@@ -78,7 +78,9 @@ public sealed record HostSelection(bool Enabled, DateTimeOffset? DeadlineUtc, st
         var options = new List<string> {"3.3.4", "scid=" + scid, "log_level=info", "tunnel_forward=true",
             // The private second socket carries no events; EOF alone asks the
             // pinned server to stop even when no encoded frame has been produced.
-            "audio=false", "control=true", "power_on=false", "clipboard_autosync=false", "cleanup=false", "max_size=1344", "max_fps=30", "video_bit_rate=12000000", "video_codec=h264"};
+            "audio=false", "control=true", "power_on=false", "clipboard_autosync=false", "cleanup=false", "max_size=1344", "max_fps=30", "video_bit_rate=12000000", "video_codec=h264",
+            // Match the encoder frame-rate hint to the cap and request short recovery GOPs.
+            "video_codec_options=frame-rate:int=30,i-frame-interval:int=1"};
         foreach (var a in ownerArguments)
             if (a.StartsWith("--display-id=")) options.Add("display_id=" + a[13..]);
             else if (a.StartsWith("--crop=")) options.Add("crop=" + a[7..]);

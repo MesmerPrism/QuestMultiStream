@@ -105,6 +105,10 @@ internal static class SelfTests
         var source=new SourceSelection("fixture","Fixture","fixture","fixture","00000000-0000-0000-0000-000000000001","00000000-0000-0000-0000-000000000002",43119,2,"640:480:0:0");
         var args=HostSelection.ServerArguments(source,"12345678");
         if(!args.Contains("display_id=2")||!args.Contains("crop=640:480:0:0")||!args.Contains("control=true")||!args.Contains("audio=false")||!args.Contains("power_on=false")||!args.Contains("clipboard_autosync=false"))throw new Exception("Actual owner lifecycle-only profile adapter failed");
+        var codecOptions=args.Where(a=>a.StartsWith("video_codec_options=",StringComparison.Ordinal)).ToArray();
+        if(codecOptions.Length!=1||codecOptions[0]!="video_codec_options=frame-rate:int=30,i-frame-interval:int=1"
+           ||args.Count(a=>a.StartsWith("max_fps=",StringComparison.Ordinal))!=1||!args.Contains("max_fps=30"))
+            throw new Exception("Actual browser encoder cadence overrides must be one typed codec-options argument with the matching frame cap");
         var now=DateTimeOffset.UtcNow;
         foreach(var offset in new[]{-1,1})
         {
